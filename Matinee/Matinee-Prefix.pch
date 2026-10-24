@@ -1,0 +1,18 @@
+//
+//  Matinee-Prefix.pch
+//  Matinee
+//
+//  iOS 6.1 is the floor. If a newer SDK is used, this keeps the deployment
+//  target honest; the code avoids every API introduced after 6.0.
+//
+
+#import <Availability.h>
+
+#ifndef __IPHONE_6_0
+#warning "Matinee targets iOS 6.0 and later."
+#endif
+
+#ifdef __OBJC__
+    #import <Foundation/Foundation.h>
+    #import <UIKit/UIKit.h>
+#endif

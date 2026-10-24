@@ -1,0 +1,8 @@
+Package: com.kerthmfy.matinee-ios6
+Name: Matinee-ios6
+Version: 0.0.1
+Architecture: iphoneos-arm
+Description: An awesome application!
+Maintainer: Kerth Michael Yadao
+Author: Kerth Michael Yadao
+Section: Utilities
