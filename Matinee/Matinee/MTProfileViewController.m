@@ -72,8 +72,8 @@
         if (error || ![json isKindOfClass:[NSDictionary class]]) {
             strongSelf.statusText = @"Unreachable";
         } else {
-            BOOL session = [json[@"session"] boolValue];
-            strongSelf.statusText = session ? @"Write enabled" : @"Read-only";
+            BOOL configured = [json[@"session"] boolValue];
+            strongSelf.statusText = configured ? @"Write configured" : @"Read-only";
         }
         [strongSelf.tableView reloadSections:[NSIndexSet indexSetWithIndex:2]
                             withRowAnimation:UITableViewRowAnimationNone];
@@ -91,7 +91,7 @@
 {
     if (section == 0) return 3;
     if (section == 1) return 3;
-    if (section == 2) return 3;
+    if (section == 2) return 4;
     return 1;
 }
 
@@ -189,8 +189,10 @@
         UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:valueIdentifier];
         if (!cell) cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:valueIdentifier];
         cell.textLabel.font = [MTAppearance bodyFont];
+        cell.textLabel.textColor = [MTAppearance ink];
         cell.detailTextLabel.font = [MTAppearance bodyFont];
         cell.detailTextLabel.textColor = [MTAppearance muted];
+        cell.detailTextLabel.text = @"";
 
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Server";
@@ -199,14 +201,18 @@
         } else if (indexPath.row == 1) {
             cell.textLabel.text = @"Status";
             cell.detailTextLabel.text = self.statusText;
-            cell.detailTextLabel.textColor = [self.statusText isEqualToString:@"Write enabled"]
-                ? [MTAppearance green]
-                : [MTAppearance muted];
+            BOOL configured = [self.statusText isEqualToString:@"Write configured"] ||
+                              [self.statusText isEqualToString:@"Write enabled"];
+            cell.detailTextLabel.textColor = configured ? [MTAppearance green] : [MTAppearance muted];
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"Test session";
+            cell.textLabel.textColor = [MTAppearance link];
+            cell.detailTextLabel.text = @"Check cookie";
+            cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         } else {
             cell.textLabel.text = @"Change server";
             cell.textLabel.textColor = [MTAppearance link];
-            cell.detailTextLabel.text = @"";
             cell.selectionStyle = UITableViewCellSelectionStyleBlue;
         }
         return cell;
@@ -246,8 +252,77 @@
         return;
     }
     if (indexPath.section == 2 && indexPath.row == 2) {
+        [self testSession];
+        return;
+    }
+    if (indexPath.section == 2 && indexPath.row == 3) {
         [self showServerAlert];
     }
+}
+
+- (void)testSession
+{
+    self.statusText = @"Checking\u2026";
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:2]
+                  withRowAnimation:UITableViewRowAnimationNone];
+
+    __weak MTProfileViewController *weakSelf = self;
+    [[MTRelay sharedRelay] session:^(id json, NSError *error) {
+        MTProfileViewController *strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        NSDictionary *dict = [json isKindOfClass:[NSDictionary class]] ? json : nil;
+        BOOL configured = [dict[@"configured"] boolValue];
+        BOOL signedIn = [dict[@"signedIn"] boolValue];
+        NSString *reason = [dict[@"reason"] isKindOfClass:[NSString class]] ? dict[@"reason"] : nil;
+
+        if (error) {
+            strongSelf.statusText = @"Check failed";
+        } else if (!configured) {
+            strongSelf.statusText = @"Read-only";
+        } else if (signedIn) {
+            strongSelf.statusText = @"Write enabled";
+        } else if ([reason isEqualToString:@"network"]) {
+            strongSelf.statusText = @"Check failed";
+        } else {
+            strongSelf.statusText = @"Session invalid";
+        }
+
+        [strongSelf.tableView reloadSections:[NSIndexSet indexSetWithIndex:2]
+                            withRowAnimation:UITableViewRowAnimationNone];
+
+        NSString *title;
+        if (error) {
+            title = @"Session check failed";
+        } else if (!configured) {
+            title = @"No session";
+        } else if (signedIn) {
+            title = @"Session valid";
+        } else if ([reason isEqualToString:@"network"]) {
+            title = @"Session check failed";
+        } else {
+            title = @"Session not valid";
+        }
+        NSString *message;
+        if (error) {
+            message = error.localizedDescription;
+        } else if (!configured) {
+            message = @"No LB_SESSION_COOKIE is set on the relay. Add one with npm run cookie, then restart the relay.";
+        } else if (signedIn) {
+            message = @"Letterboxd recognized the relay's cookie. The log sheet can post diary entries.";
+        } else if ([reason isEqualToString:@"network"]) {
+            message = @"The relay could not reach Letterboxd. Check the Mac's network and try again.";
+        } else {
+            message = @"Letterboxd showed the signed-out form. The cookie is missing, expired, or from a different session.";
+        }
+
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:title
+                                                        message:message
+                                                       delegate:nil
+                                              cancelButtonTitle:@"OK"
+                                              otherButtonTitles:nil];
+        [alert show];
+    }];
 }
 
 #pragma mark - Alerts

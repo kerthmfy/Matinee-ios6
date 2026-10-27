@@ -399,6 +399,29 @@ async function route(req, res) {
     });
   }
 
+  if (pathname === '/api/session') {
+    const cookie = process.env.LB_SESSION_COOKIE || '';
+    if (!cookie) {
+      return sendJson(res, 200, {
+        ok: true,
+        configured: false,
+        signedIn: false,
+        reason: 'no_session',
+        detail: 'No LB_SESSION_COOKIE is set on the relay.',
+      });
+    }
+    const result = await lb.checkSession(cookie);
+    const signedIn = Boolean(result.ok && result.signedIn);
+    return sendJson(res, 200, {
+      ok: true,
+      configured: true,
+      signedIn,
+      reason: result.reason || (signedIn ? 'signed_in' : 'session_not_valid'),
+      slug: result.slug || null,
+      detail: result.detail || null,
+    });
+  }
+
   if (pathname === '/api/feed') {
     const handle = u.searchParams.get('user') || MEMBER;
     const parsed = lb.parseHandle(handle);

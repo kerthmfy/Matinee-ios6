@@ -3,7 +3,7 @@
 /*
  * Runs every offline suite in a fresh process.
  *
- *   npm test              # relay, mocks, DOM, write shape, ObjC, package
+ *   npm test              # cookie, relay, mocks, DOM, write shape, ObjC, package
  *   npm test -- --live     # also hit letterboxd.com
  *
  * The live suite is opt-in because it depends on the network and on
@@ -17,6 +17,7 @@ const ROOT = path.join(__dirname, '..');
 const live = process.env.MATINEE_LIVE === '1' || process.argv.includes('--live');
 
 const suites = [
+  ['cookie capture', 'test/cookie.js'],
   ['relay HTTP API', 'test/relay-api.js'],
   ['TMDB search integration', 'test/relay-search.js'],
   ['Letterboxd write integration', 'test/relay-write.js'],

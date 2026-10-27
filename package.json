@@ -5,8 +5,10 @@
   "description": "An iOS 6 Letterboxd client: relay, browser mock, and UIKit app.",
   "scripts": {
     "start": "node relay/start.js",
+    "cookie": "node relay/cookie.js",
     "fixtures": "node relay/fixtures/build.js",
     "test": "node test/run-all.js",
+    "test:cookie": "node test/cookie.js",
     "test:api": "node test/relay-api.js",
     "test:search": "node test/relay-search.js",
     "test:write-integration": "node test/relay-write.js",

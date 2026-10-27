@@ -20,6 +20,7 @@ typedef void (^MTRelayCompletion)(id json, NSError *error);
 + (NSURL *)URLForPath:(NSString *)path;
 
 - (void)health:(MTRelayCompletion)completion;
+- (void)session:(MTRelayCompletion)completion;
 - (void)feedForHandle:(NSString *)handle completion:(MTRelayCompletion)completion;
 - (void)filmWithSlug:(NSString *)slug completion:(MTRelayCompletion)completion;
 - (void)searchForQuery:(NSString *)query completion:(MTRelayCompletion)completion;

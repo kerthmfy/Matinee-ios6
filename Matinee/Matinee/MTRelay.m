@@ -120,6 +120,11 @@ static NSError *MTRelayError(NSInteger code, NSString *message)
     [self getPath:@"/api/health" completion:completion];
 }
 
+- (void)session:(MTRelayCompletion)completion
+{
+    [self getPath:@"/api/session" completion:completion];
+}
+
 - (void)feedForHandle:(NSString *)handle completion:(MTRelayCompletion)completion
 {
     NSString *path = @"/api/feed";

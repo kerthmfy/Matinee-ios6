@@ -534,6 +534,33 @@ function buildLogBody(film, opts) {
   return form.toString();
 }
 
+/**
+ * Check whether a cookie is still signed in without posting anything. The
+ * film page is public; a real session gets a real CSRF token, while a
+ * signed-out session gets Letterboxd's placeholder token.
+ */
+async function checkSession(cookie, slug) {
+  if (!cookie) return { ok: false, reason: 'no_session' };
+  const target = slug || 'primer';
+  try {
+    const film = parseFilm((await fetchFilm(target, cookie)).html, target);
+    return {
+      ok: true,
+      signedIn: film.signedIn,
+      slug: target,
+      uid: Boolean(film.uid),
+      csrf: Boolean(film.csrf),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      reason: 'network',
+      slug: target,
+      detail: String(e.message || e),
+    };
+  }
+}
+
 async function submitLog(opts) {
   const cookie = opts.cookie || process.env.LB_SESSION_COOKIE || '';
   if (!cookie) {
@@ -620,6 +647,7 @@ module.exports = {
   fetchImage,
   proxyPath,
   buildLogBody,
+  checkSession,
   submitLog,
   FEED_URL,
   FILM_URL,

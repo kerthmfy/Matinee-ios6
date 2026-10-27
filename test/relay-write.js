@@ -37,7 +37,7 @@ async function main() {
     };
     seen.push(record);
 
-    if (req.method === 'GET' && req.url === '/film/the-marvels/') {
+    if (req.method === 'GET' && (req.url === '/film/the-marvels/' || req.url === '/film/primer/')) {
       if (mode === 'missing') {
         res.writeHead(404, { 'Content-Type': 'text/html' });
         res.end('missing');
@@ -217,6 +217,61 @@ async function main() {
     eq(result.ok, false);
     eq(result.reason, 'film_unreachable');
     notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  async function getSession() {
+    const res = await fetch(base + '/api/session');
+    const body = await res.json();
+    return { res, body };
+  }
+
+  testAsync('/api/session reports no cookie as unconfigured', async () => {
+    const previous = process.env.LB_SESSION_COOKIE;
+    delete process.env.LB_SESSION_COOKIE;
+    seen.length = 0;
+    const { res, body } = await getSession();
+    eq(res.status, 200);
+    eq(body.ok, true);
+    eq(body.configured, false);
+    eq(body.signedIn, false);
+    eq(body.reason, 'no_session');
+    eq(seen.length, 0);
+    process.env.LB_SESSION_COOKIE = previous;
+  });
+
+  testAsync('/api/session accepts a signed-in cookie', async () => {
+    mode = 'signedin';
+    seen.length = 0;
+    const { res, body } = await getSession();
+    eq(res.status, 200);
+    eq(body.configured, true);
+    eq(body.signedIn, true);
+    eq(body.reason, 'signed_in');
+    eq(body.slug, 'primer');
+    const get = seen.find((r) => r.method === 'GET');
+    eq(get.url, '/film/primer/');
+    eq(get.headers.cookie, 'letterboxd.signed.in=test-cookie');
+  });
+
+  testAsync('/api/session rejects an expired cookie with session_not_valid', async () => {
+    mode = 'signedout';
+    seen.length = 0;
+    const { res, body } = await getSession();
+    eq(res.status, 200);
+    eq(body.configured, true);
+    eq(body.signedIn, false);
+    eq(body.reason, 'session_not_valid');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('/api/session surfaces a network failure without claiming invalid', async () => {
+    mode = 'missing';
+    const { res, body } = await getSession();
+    eq(res.status, 200);
+    eq(body.configured, true);
+    eq(body.signedIn, false);
+    eq(body.reason, 'network');
+    ok(body.detail, 'detail is present');
   });
 
   testAsync('the HTTP route still no-sessions when the env cookie is absent', async () => {

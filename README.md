@@ -19,11 +19,11 @@ The phone never holds a Letterboxd password. It talks to the relay; the relay ta
 
 | Piece | State |
 | --- | --- |
-| Relay: diary, lists, film detail, image proxy, search, CSV/write shape | Working; 35 integration tests, live-tested against `letterboxd.com` |
+| Relay: diary, lists, film detail, image proxy, search, CSV/write shape | Working; relay suites pass offline and live against `letterboxd.com` |
 | Browser mock: diary, film, log sheet, lists, search, profile, CSV | Working; 29/29 DOM tests |
 | Installable mock: manifest, service worker, poster cache | Working; 4/4 service-worker tests |
 | UIKit target: 4 tabs, diary, film, log, lists, search, profile | Compiled with Theos (armv7, min iOS 6.0) and packaged; **device run pending** |
-| Direct log to Letterboxd | Form and transport tested against a local signed-in mock; a real cookie is still unverified |
+| Direct log to Letterboxd | Form and transport tested against a local signed-in mock; `npm run cookie` captures a browser session, a real cookie is still unverified |
 | CSV → official Letterboxd import | Supported path |
 
 The browser mock is the visual reference. The Objective-C target is the same design translated to UIKit. It now compiles and packages with Theos against the armv7 slice of the 11.4 SDK, with a 6.0 deployment target; the `.deb` is in `packaging/theos/packages/`. It has not been launched on a physical iOS 6 device yet, so treat that as the next test. `docs/GUIDE.md` explains the exact toolchain.
@@ -33,8 +33,8 @@ The browser mock is the visual reference. The Objective-C target is the same des
 Requires **Node 18+**. The relay itself has no runtime dependencies; `jsdom` is only for the tests.
 
 ```bash
-git clone https://github.com/YOURNAME/matinee.git
-cd matinee
+git clone https://github.com/kerthmfy/Matinee-ios6.git
+cd Matinee-ios6
 npm install
 npm start
 ```
@@ -42,7 +42,7 @@ npm start
 Open <http://127.0.0.1:3000>. You should see the iPhone and iPad previews and a live feed for `@kerthfyadao`.
 
 ```bash
-npm test              # relay, mocks, DOM, write shape, ObjC, package
+npm test              # cookie, relay, mocks, DOM, write shape, ObjC, package
 npm test -- --live    # also fetch letterboxd.com
 ```
 
@@ -68,6 +68,32 @@ npm start
 | `LB_SESSION_COOKIE` | unset | Enables the experimental `POST /api/log` write path |
 
 `LB_SESSION_COOKIE` is a real letterboxd.com session cookie. Keep it on the relay; never put it in the app, a screenshot, or git. See `docs/GUIDE.md` for the trade-offs.
+
+### Capture a Letterboxd session
+
+Letterboxd's sign-in page is behind Cloudflare, so the phone cannot log in. Sign in with a normal desktop browser first, then copy the session cookie into the relay:
+
+1. In DevTools → Application/Storage → Cookies → `https://letterboxd.com`, copy the **value** of `letterboxd.signed.in`.
+2. On the Mac running the relay:
+
+   ```bash
+   pbpaste | npm run cookie
+   ```
+
+The helper reads stdin (never argv), validates the cookie against `letterboxd.com/film/primer/`, writes `.env` with mode `0600`, and never prints the value. It refuses to replace a working cookie if validation fails. Options:
+
+```bash
+pbpaste | npm run cookie -- --force      # save even if validation fails
+pbpaste | npm run cookie -- --no-verify  # skip the network check
+```
+
+Restart the relay, then check **Profile → Test session** in the app, or:
+
+```bash
+curl -s http://127.0.0.1:3000/api/session
+```
+
+`/api/session` returns `{ ok, configured, signedIn, reason, slug, detail }`. `configured` only means the env value exists; `signedIn` means Letterboxd accepted it. Profile shows **Write configured** after boot and **Write enabled** only after the session check succeeds.
 
 ## How it fits together
 
@@ -97,6 +123,7 @@ matinee/
 ├── relay/
 │   ├── server.js          HTTP routes, static mock, cache, CSV/write API
 │   ├── lb.js              RSS + JSON-LD parsing, image URL rules, log form
+│   ├── cookie.js          validate and save a browser session into .env
 │   ├── images.js          in-memory poster byte cache
 │   └── fixtures/          captured feed/film pages for deterministic tests
 ├── web/
@@ -109,9 +136,10 @@ matinee/
 │   ├── Matinee.xcodeproj/ hand-written project file
 │   └── Matinee/           15 Objective-C sources + Info.plist + icons
 ├── test/
+│   ├── cookie.js          cookie normalization, .env editing, permissions
 │   ├── relay-api.js       offline HTTP routes, static files, SSRF boundary
 │   ├── relay-search.js    TMDB search against a local HTTPS mock
-│   ├── relay-write.js     signed-in form post against a local HTTPS mock
+│   ├── relay-write.js     signed-in form post and /api/session against a local HTTPS mock
 │   ├── dom-smoke.js       the original visual/interaction regressions
 │   ├── dom-flows.js       search, lists, connect, iPad split view
 │   ├── sw-cache.js        opaque poster caching without a browser
@@ -157,7 +185,7 @@ There are two paths, and they are deliberately different:
 
    This needs no cookie, survives 2FA, and is the only path that has been verified end to end.
 
-2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same form Letterboxd's own page posts, using the film page's CSRF token and `viewingableUid`. The form shape, signed-in detection, cookie forwarding, success, rejection, and expired-session paths are tested against a local HTTPS mock. A real member cookie was not available, so real-account acceptance is still unverified. It is off by default and returns `no_session` until configured.
+2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same form Letterboxd's own page posts, using the film page's CSRF token and `viewingableUid`. Capture the cookie with `pbpaste | npm run cookie`, restart the relay, and use **Profile → Test session** to confirm it. The form shape, signed-in detection, cookie forwarding, success, rejection, expired-session, and `/api/session` paths are tested against a local HTTPS mock. A real member cookie was not available, so real-account acceptance is still unverified. It is off by default and returns `no_session` until configured.
 
 Why not log in on the phone? It would mean handling a password, 2FA, cookie expiry, and CSRF on the device, and it would still be an unofficial write path. The relay keeps that blast radius on a machine you control, and the CSV path keeps the app useful without it.
 
@@ -175,9 +203,10 @@ Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB
 ## Tests
 
 ```text
+ok   cookie:           9/9 passed
 ok   relay-api:       20/20 passed
 ok   relay-search:     7/7 passed
-ok   relay-write:      8/8 passed
+ok   relay-write:     12/12 passed
 ok   dom-smoke:       15/15 passed
 ok   dom-flows:       14/14 passed
 ok   sw-cache:         4/4 passed
@@ -187,7 +216,7 @@ ok   package:         15/15 passed
 ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
 ```
 
-The offline total is **140 assertions**. Search and direct write are exercised
+The offline total is **153 assertions across 10 suites**; with `--live` it is **170 assertions across 11 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
 real Letterboxd session cookie is still needed to prove the upstream account

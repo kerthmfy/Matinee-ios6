@@ -38,6 +38,7 @@ The web mock exists because the iOS target cannot be run on a modern Mac. It is 
 | `GET /api/film?slug=...` | Fetches a film page, parses JSON-LD, runtime, cast, synopsis, CSRF, and `viewingableUid` |
 | `GET /api/search?q=...` | TMDB search; returns `tmdb_key_missing` when unconfigured |
 | `POST /api/connect` | Normalizes a handle/profile URL/RSS URL and checks the feed |
+| `GET /api/session` | Reports whether `LB_SESSION_COOKIE` is configured and whether Letterboxd still accepts it |
 | `POST /api/log` | Experimental form post using `LB_SESSION_COOKIE` |
 | `GET /img?u=...&w=...` | Allowlisted poster proxy with a byte cache |
 
@@ -113,9 +114,10 @@ The star control is a custom `UIView`. It draws five paths, clips the fill to ea
 
 | Suite | What it proves |
 | --- | --- |
+| `test/cookie.js` | Cookie normalization, unrelated-header rejection, masking, in-place `.env` replacement, and `0600` permissions |
 | `test/relay-api.js` | Health, static mock, manifest/service worker/icons, feed/film fixtures, connect, missing-key search, no-session log, image allowlist, CORS, 404s, traversal attempts |
 | `test/relay-search.js` | Configured search against a local HTTPS TMDB mock: query encoding, movie/TV mapping, poster proxying, empty query, upstream 500, malformed JSON |
-| `test/relay-write.js` | Signed-in form post against a local HTTPS Letterboxd mock: cookie/CSRF/uid, field body, 200, 403, expired session, unreachable film, route wiring |
+| `test/relay-write.js` | Signed-in form post against a local HTTPS Letterboxd mock: cookie/CSRF/uid, field body, 200, 403, expired session, unreachable film, route wiring; `/api/session` success/expired/network paths |
 | `test/dom-smoke.js` | The mock renders, the logo-only nav has no text, stars are green and correctly filled, the log sheet does not re-animate, the Connect button is gone, CSV columns are right |
 | `test/dom-flows.js` | Search → draft, lists/list detail, connect, phone/iPad back labels, and manifest/touch-icon links |
 | `test/sw-cache.js` | Opaque cross-origin poster caching, cache hits, waitUntil, and pass-through for non-posters |
@@ -627,10 +629,33 @@ Notes:
 
 The form shape is tested against a captured film page (`relay/fixtures/film-form-excerpt.html`). The full request path is tested against a local HTTPS mock with a signed-in CSRF token (`test/relay-write.js`), including the 200, 403, and expired-session cases. A real member cookie was not available, so real-account acceptance is still unverified. Treat a live `200` as “the site accepted the post”, then check the diary.
 
-To enable it:
+To enable it, sign in to Letterboxd in a normal desktop browser, then hand the session cookie to the relay. Cloudflare blocks `/signin/` for non-browser clients, so the phone never attempts to log in.
+
+1. In DevTools → Application/Storage → Cookies → `https://letterboxd.com`, copy the **value** of `letterboxd.signed.in` (or copy the whole `Cookie:` header).
+2. On the Mac running the relay:
+
+   ```bash
+   pbpaste | npm run cookie
+   ```
+
+`npm run cookie` runs `relay/cookie.js`. It reads the value from stdin, never from argv, so it does not land in shell history or `ps`. Before saving, it fetches a public film page (`/film/primer/`) and checks for a real CSRF token. A signed-out or expired cookie is rejected, and a working `.env` is left untouched.
+
+```
+Saved letterboxd.signed.in=…(NNN chars) to /path/to/.env.
+Letterboxd accepted the cookie; the relay can now post diary entries.
+Restart the relay (Ctrl-C, then `npm start`) to load it.
+```
+
+The helper preserves the rest of `.env`, writes mode `0600`, and never prints the value. If you need to override validation:
 
 ```bash
-# Put the cookie in .env (gitignored).
+pbpaste | npm run cookie -- --force      # save anyway after a failed check
+pbpaste | npm run cookie -- --no-verify  # skip the network check
+```
+
+Manual fallback, if you prefer to edit `.env` yourself:
+
+```bash
 umask 077
 cat >> .env <<'EOF'
 LB_SESSION_COOKIE='letterboxd.signed.in=<paste-the-value-here>'
@@ -641,7 +666,20 @@ npm start
 
 `npm start` loads `.env` automatically. If you run `node relay/server.js` directly, source it first with `set -a; . ./.env; set +a`.
 
-Get the cookie from your own browser's developer tools after signing in. It expires; when it does, the relay returns `session_not_valid`. Do not put it in the app, a screenshot, an issue, or a commit.
+After restarting, verify without guessing:
+
+```bash
+curl -s http://127.0.0.1:3000/api/session
+```
+
+The response is `{ ok, configured, signedIn, reason, slug, detail }`:
+
+- `configured: false`, `reason: "no_session"` — no value in the environment.
+- `configured: true`, `signedIn: true`, `reason: "signed_in"` — Letterboxd accepted the cookie.
+- `configured: true`, `signedIn: false`, `reason: "session_not_valid"` — expired or signed-out cookie.
+- `reason: "network"` — the relay could not reach Letterboxd; the cookie was not judged.
+
+In the app, **Profile → Test session** runs the same check. **Write configured** means the env value exists; **Write enabled** appears only after `signedIn` is true. The cookie expires eventually; when it does, repeat the capture. Do not put it in the app, a screenshot, an issue, or a commit.
 
 ### 6.4 Why there is no “rate directly” button without a cookie
 
@@ -670,8 +708,10 @@ If you want a one-tap rating inside the official app, that is a tweak (section 4
 | Search says “TMDB key missing” | Put `TMDB_API_KEY` in `.env` and restart; it is read at boot |
 | Posters are gray boxes | `/img` returns 403 for a non-allowlisted host; check the console and `relay/lb.js` `imageUrl` |
 | Log sheet shows a date in the wrong format | The mock uses a browser date input; the app uses `UIDatePicker` and stores ISO `yyyy-MM-dd` |
-| `Send to Letterboxd` says `no_session` | `LB_SESSION_COOKIE` is unset; this is expected. Use CSV |
-| `session_not_valid` | The cookie expired or is not signed in; refresh it from the browser |
+| `Send to Letterboxd` says `no_session` | `LB_SESSION_COOKIE` is unset; run `pbpaste \| npm run cookie`, then restart the relay. CSV still works |
+| Profile says **Write configured** but the log fails | The env value exists but was not validated. Run **Profile → Test session** or `curl /api/session` |
+| `session_not_valid` | The cookie expired or is not signed in; refresh it from the browser with `pbpaste \| npm run cookie` |
+| `/api/session` says `network` | The relay could not reach Letterboxd. Check the Mac's network; the cookie was not judged |
 | The back button and title collide | The nav title caps at 46% when `.has-back` is present; check that class is on the bar |
 | Xcode says armv7 is unsupported | You are on a modern Xcode. Use 4.6.3/5.1.1 or Theos |
 | Theos cannot find UIKit | The SDK is missing from `$THEOS/sdks`; the default is `iPhoneOS11.4.sdk` |
