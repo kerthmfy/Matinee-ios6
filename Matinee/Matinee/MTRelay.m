@@ -127,10 +127,18 @@ static NSError *MTRelayError(NSInteger code, NSString *message)
 
 - (void)feedForHandle:(NSString *)handle completion:(MTRelayCompletion)completion
 {
+    [self feedForHandle:handle refresh:NO completion:completion];
+}
+
+- (void)feedForHandle:(NSString *)handle refresh:(BOOL)refresh completion:(MTRelayCompletion)completion
+{
     NSString *path = @"/api/feed";
     if (handle.length) {
         NSString *encoded = [handle stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
         path = [path stringByAppendingFormat:@"?user=%@", encoded];
+    }
+    if (refresh) {
+        path = [path stringByAppendingString:handle.length ? @"&refresh=1" : @"?refresh=1"];
     }
     [self getPath:path completion:completion];
 }

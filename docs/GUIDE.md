@@ -295,7 +295,7 @@ Alternatively, zip it as an `.ipa` and use `ipainstaller` or a signing service. 
 The default in `MTStore.m` is `http://192.168.1.50:3000`, a placeholder. Either:
 
 - change it before building, or
-- launch the app → Profile → Change server → enter `http://YOUR_MAC_LAN_IP:3000`.
+- launch the app → Profile → Relay → enter `http://YOUR_MAC_LAN_IP:3000`.
 
 The phone and Mac must be on the same network. macOS may prompt for incoming connections; allow Node. Verify from the phone's Safari first:
 
@@ -692,7 +692,7 @@ The response is `{ ok, configured, signedIn, reason, slug, detail }`:
 - `reason: "network"` — the relay could not reach Letterboxd; the cookie was not judged.
 - `reason: "challenge"` — Cloudflare challenged the relay before Letterboxd saw it; refresh the cookie and match `LB_USER_AGENT` to the browser that produced `cf_clearance`.
 
-In the app, **Profile → Test session** runs the same check. **Write configured** means the env value exists; **Write enabled** appears only after `signedIn` is true. The cookie expires eventually; when it does, repeat the capture. Do not put it in the app, a screenshot, an issue, or a commit.
+In the app, **Profile → Check session** runs the same check. The session row shows **Cookie valid** only after `signedIn` is true; **No cookie**, **Cookie expired**, **Relay offline**, and **LB unreachable** describe the other outcomes. The cookie expires eventually; when it does, repeat the capture. Do not put it in the app, a screenshot, an issue, or a commit.
 
 ### 6.4 Why there is no “rate directly” button without a cookie
 
@@ -725,7 +725,7 @@ If you want a one-tap rating inside the official app, that is a tweak (section 4
 | `Send to Letterboxd` says `challenge` | Cloudflare challenged the relay. Recapture the whole cookie and set `LB_USER_AGENT` to the exact UA of the browser that produced `cf_clearance`; restart |
 | `Send to Letterboxd` says `no_csrf` | The session token is stale or missing. Refresh the cookie from the browser and restart the relay |
 | `Send to Letterboxd` says `no_lid` | Film JSON did not expose the production id; confirm the slug is a real Letterboxd film and retry |
-| Profile says **Write configured** but the log fails | The env value exists but was not validated. Run **Profile → Test session** or `curl /api/session` |
+| Session row says **Cookie valid** but the log fails | The cookie was accepted but may have expired, or Cloudflare is challenging the write. Run **Profile → Check session**, then `curl /api/session` |
 | `session_not_valid` | The cookie expired or is not signed in; refresh it from the browser with `pbpaste \| npm run cookie` |
 | `/api/session` says `network` | The relay could not reach Letterboxd. Check the Mac's network; the cookie was not judged |
 | The back button and title collide | The nav title caps at 46% when `.has-back` is present; check that class is on the bar |

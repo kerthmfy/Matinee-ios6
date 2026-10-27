@@ -28,7 +28,7 @@ APPLICATION_NAME = Matinee
 
 Matinee_FILES = $(wildcard Matinee/*.m)
 Matinee_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore MessageUI
-Matinee_CFLAGS = -fobjc-arc -Wno-error=deprecated-module-dot-map
+Matinee_CFLAGS = -fobjc-arc -mno-thumb -Wno-error=deprecated-module-dot-map
 Matinee_CODESIGN_FLAGS = -S
 Matinee_INSTALL_PATH = /Applications
 

@@ -9,6 +9,7 @@
 #import "MTRelay.h"
 #import "MTStarsView.h"
 #import "MTStore.h"
+#import <QuartzCore/QuartzCore.h>
 
 static NSString *MTRatingCaption(CGFloat rating)
 {
@@ -35,7 +36,7 @@ static NSDateFormatter *MTDisplayFormatter(void)
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         formatter = [[NSDateFormatter alloc] init];
-        [formatter setDateFormat:@"MMM d, yyyy"];
+        [formatter setDateFormat:@"M/d/yyyy"];
     });
     return formatter;
 }
@@ -48,7 +49,89 @@ static NSDate *MTDateFromISO(NSString *string)
 }
 
 
-@interface MTLogHeaderCell : UITableViewCell
+@interface MTCalendarIconView : UIView
+@end
+
+@implementation MTCalendarIconView
+
+- (id)initWithFrame:(CGRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor clearColor];
+        self.opaque = NO;
+    }
+    return self;
+}
+
+- (void)drawRect:(CGRect)rect
+{
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    if (!ctx) return;
+
+    UIColor *stroke = [UIColor colorWithRed:0.25 green:0.25 blue:0.27 alpha:1.0];
+    CGContextSetStrokeColorWithColor(ctx, stroke.CGColor);
+    CGContextSetLineWidth(ctx, 1.2);
+
+    UIBezierPath *box = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(2.0, 3.0, 14.0, 12.0)
+                                                      cornerRadius:1.5];
+    [box stroke];
+    CGContextMoveToPoint(ctx, 2.0, 6.5);
+    CGContextAddLineToPoint(ctx, 16.0, 6.5);
+    CGContextStrokePath(ctx);
+
+    CGContextMoveToPoint(ctx, 5.5, 1.5);
+    CGContextAddLineToPoint(ctx, 5.5, 4.0);
+    CGContextMoveToPoint(ctx, 12.5, 1.5);
+    CGContextAddLineToPoint(ctx, 12.5, 4.0);
+    CGContextStrokePath(ctx);
+
+    CGContextSetFillColorWithColor(ctx, stroke.CGColor);
+    for (NSInteger row = 0; row < 2; row++) {
+        for (NSInteger column = 0; column < 3; column++) {
+            CGContextFillRect(ctx, CGRectMake(4.5 + (CGFloat)column * 3.5,
+                                              8.0 + (CGFloat)row * 3.0,
+                                              1.2, 1.2));
+        }
+    }
+}
+
+@end
+
+
+@interface MTLogBaseCell : UITableViewCell
+@property (nonatomic, strong) UIView *rule;
+@end
+
+@implementation MTLogBaseCell
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        self.backgroundColor = [UIColor whiteColor];
+        self.contentView.backgroundColor = [UIColor whiteColor];
+        self.selectionStyle = UITableViewCellSelectionStyleNone;
+
+        _rule = [[UIView alloc] initWithFrame:CGRectZero];
+        _rule.backgroundColor = [MTAppearance sep];
+        [self.contentView addSubview:_rule];
+    }
+    return self;
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    CGFloat hairline = 1.0 / (self.contentScaleFactor ?: 1.0);
+    self.rule.frame = CGRectMake(0.0, CGRectGetHeight(self.contentView.bounds) - hairline,
+                                 CGRectGetWidth(self.contentView.bounds), hairline);
+}
+
+@end
+
+
+@interface MTLogHeaderCell : MTLogBaseCell
 @property (nonatomic, strong) MTPosterImageView *poster;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *subLabel;
@@ -61,19 +144,20 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
         _poster = [[MTPosterImageView alloc] initWithFrame:CGRectZero];
         [self.contentView addSubview:_poster];
 
         _titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _titleLabel.font = [UIFont boldSystemFontOfSize:14.0];
+        _titleLabel.backgroundColor = [UIColor clearColor];
+        _titleLabel.font = [UIFont boldSystemFontOfSize:15.0];
         _titleLabel.textColor = [MTAppearance ink];
         _titleLabel.numberOfLines = 2;
         [self.contentView addSubview:_titleLabel];
 
         _subLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-        _subLabel.font = [MTAppearance smallFont];
-        _subLabel.textColor = [MTAppearance muted];
+        _subLabel.backgroundColor = [UIColor clearColor];
+        _subLabel.font = [UIFont systemFontOfSize:11.5];
+        _subLabel.textColor = [UIColor colorWithRed:0.482 green:0.482 blue:0.502 alpha:1.0];
         [self.contentView addSubview:_subLabel];
     }
     return self;
@@ -93,15 +177,15 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     [super layoutSubviews];
     CGFloat width = CGRectGetWidth(self.contentView.bounds);
-    self.poster.frame = CGRectMake(10.0, 10.0, 42.0, 63.0);
-    self.titleLabel.frame = CGRectMake(64.0, 12.0, width - 76.0, 38.0);
-    self.subLabel.frame = CGRectMake(64.0, 52.0, width - 76.0, 16.0);
+    self.poster.frame = CGRectMake(12.0, 8.0, 42.0, 63.0);
+    self.titleLabel.frame = CGRectMake(66.0, 11.0, width - 78.0, 36.0);
+    self.subLabel.frame = CGRectMake(66.0, 51.0, width - 78.0, 16.0);
 }
 
 @end
 
 
-@interface MTLogRatingCell : UITableViewCell
+@interface MTLogRatingCell : MTLogBaseCell
 @property (nonatomic, strong) MTRatingControl *control;
 @property (nonatomic, strong) UILabel *caption;
 - (void)configureWithRating:(CGFloat)rating;
@@ -113,13 +197,13 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
         _control = [[MTRatingControl alloc] initWithFrame:CGRectZero];
         [self.contentView addSubview:_control];
 
         _caption = [[UILabel alloc] initWithFrame:CGRectZero];
-        _caption.font = [MTAppearance smallFont];
-        _caption.textColor = [MTAppearance muted];
+        _caption.backgroundColor = [UIColor clearColor];
+        _caption.font = [UIFont systemFontOfSize:11.0];
+        _caption.textColor = [UIColor colorWithRed:0.482 green:0.482 blue:0.502 alpha:1.0];
         _caption.textAlignment = NSTextAlignmentCenter;
         [self.contentView addSubview:_caption];
     }
@@ -136,14 +220,59 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     [super layoutSubviews];
     CGFloat width = CGRectGetWidth(self.contentView.bounds);
-    self.control.frame = CGRectMake(10.0, 8.0, width - 20.0, 30.0);
-    self.caption.frame = CGRectMake(10.0, 44.0, width - 20.0, 16.0);
+    self.control.frame = CGRectMake(12.0, 6.0, width - 24.0, 36.0);
+    self.caption.frame = CGRectMake(12.0, 48.0, width - 24.0, 15.0);
 }
 
 @end
 
 
-@interface MTLogReviewCell : UITableViewCell
+@interface MTLogWatchedCell : MTLogBaseCell
+@property (nonatomic, strong) UILabel *label;
+@property (nonatomic, strong) UITextField *field;
+- (void)setField:(UITextField *)field;
+@end
+
+@implementation MTLogWatchedCell
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        _label = [[UILabel alloc] initWithFrame:CGRectZero];
+        _label.backgroundColor = [UIColor clearColor];
+        _label.font = [UIFont systemFontOfSize:13.0];
+        _label.textColor = [UIColor colorWithRed:0.227 green:0.227 blue:0.247 alpha:1.0];
+        _label.text = @"Watched";
+        [self.contentView addSubview:_label];
+    }
+    return self;
+}
+
+- (void)setField:(UITextField *)field
+{
+    if (_field != field) {
+        [_field removeFromSuperview];
+        _field = field;
+        [self.contentView addSubview:_field];
+        [self setNeedsLayout];
+    }
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+    CGFloat width = CGRectGetWidth(self.contentView.bounds);
+    self.label.frame = CGRectMake(12.0, 16.0, 74.0, 18.0);
+    self.field.frame = CGRectMake(96.0, 10.0, width - 108.0, 30.0);
+}
+
+@end
+
+
+@interface MTLogReviewCell : MTLogBaseCell
+@property (nonatomic, strong) UILabel *label;
+@property (nonatomic, strong) UIView *box;
 @property (nonatomic, strong) UITextView *textView;
 @property (nonatomic, strong) UILabel *placeholder;
 @end
@@ -154,20 +283,34 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
+        _label = [[UILabel alloc] initWithFrame:CGRectZero];
+        _label.backgroundColor = [UIColor clearColor];
+        _label.font = [UIFont systemFontOfSize:13.0];
+        _label.textColor = [UIColor colorWithRed:0.227 green:0.227 blue:0.247 alpha:1.0];
+        _label.text = @"Review";
+        [self.contentView addSubview:_label];
+
+        _box = [[UIView alloc] initWithFrame:CGRectZero];
+        _box.backgroundColor = [UIColor whiteColor];
+        _box.layer.cornerRadius = 4.0;
+        _box.layer.borderColor = [UIColor colorWithRed:0.725 green:0.745 blue:0.776 alpha:1.0].CGColor;
+        _box.layer.borderWidth = 1.0;
+        [self.contentView addSubview:_box];
+
         _textView = [[UITextView alloc] initWithFrame:CGRectZero];
         _textView.backgroundColor = [UIColor clearColor];
         _textView.font = [UIFont systemFontOfSize:13.0];
         _textView.textColor = [MTAppearance ink];
         _textView.scrollEnabled = YES;
-        [self.contentView addSubview:_textView];
+        [_box addSubview:_textView];
 
         _placeholder = [[UILabel alloc] initWithFrame:CGRectZero];
+        _placeholder.backgroundColor = [UIColor clearColor];
         _placeholder.text = @"Optional note";
         _placeholder.font = [UIFont systemFontOfSize:13.0];
         _placeholder.textColor = [UIColor colorWithWhite:0.62 alpha:1.0];
         _placeholder.userInteractionEnabled = NO;
-        [self.contentView addSubview:_placeholder];
+        [_box addSubview:_placeholder];
     }
     return self;
 }
@@ -176,8 +319,60 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     [super layoutSubviews];
     CGFloat width = CGRectGetWidth(self.contentView.bounds);
-    self.textView.frame = CGRectMake(6.0, 6.0, width - 12.0, CGRectGetHeight(self.contentView.bounds) - 12.0);
-    self.placeholder.frame = CGRectMake(12.0, 12.0, width - 24.0, 18.0);
+    self.label.frame = CGRectMake(12.0, 12.0, 74.0, 18.0);
+    self.box.frame = CGRectMake(96.0, 10.0, width - 108.0, 84.0);
+    self.textView.frame = self.box.bounds;
+    self.placeholder.frame = CGRectMake(11.0, 6.0,
+                                        CGRectGetWidth(self.box.bounds) - 22.0, 18.0);
+}
+
+@end
+
+
+@interface MTLogSwitchCell : MTLogBaseCell
+@property (nonatomic, strong) UILabel *label;
+@property (nonatomic, strong) UISwitch *toggle;
+- (void)configureWithTitle:(NSString *)title on:(BOOL)on tag:(NSInteger)tag;
+@end
+
+@implementation MTLogSwitchCell
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        _label = [[UILabel alloc] initWithFrame:CGRectZero];
+        _label.backgroundColor = [UIColor clearColor];
+        _label.font = [UIFont systemFontOfSize:13.0];
+        _label.textColor = [UIColor colorWithRed:0.227 green:0.227 blue:0.247 alpha:1.0];
+        [self.contentView addSubview:_label];
+
+        _toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
+        [self.contentView addSubview:_toggle];
+    }
+    return self;
+}
+
+- (void)configureWithTitle:(NSString *)title on:(BOOL)on tag:(NSInteger)tag
+{
+    self.label.text = title;
+    self.toggle.on = on;
+    self.toggle.tag = tag;
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+
+    [self.toggle sizeToFit];
+    CGSize toggleSize = self.toggle.bounds.size;
+
+    self.label.frame = CGRectMake(12.0, 15.0, 74.0, 18.0);
+    self.toggle.frame = CGRectMake(96.0,
+                                  floor((CGRectGetHeight(self.contentView.bounds) - toggleSize.height) * 0.5),
+                                  toggleSize.width,
+                                  toggleSize.height);
 }
 
 @end
@@ -213,19 +408,34 @@ static NSDate *MTDateFromISO(NSString *string)
     self.title = @"Log film";
     self.view.backgroundColor = [MTAppearance paper];
 
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
-                                                                                          target:self
-                                                                                          action:@selector(cancelTapped:)];
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSave
-                                                                                           target:self
-                                                                                           action:@selector(saveTapped:)];
+    UIButton *cancel = [UIButton buttonWithType:UIButtonTypeCustom];
+    cancel.frame = CGRectMake(0.0, 0.0, 64.0, 30.0);
+    [cancel setTitle:@"Cancel" forState:UIControlStateNormal];
+    cancel.titleLabel.font = [UIFont boldSystemFontOfSize:13.0];
+    [cancel setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [cancel setTitleShadowColor:[UIColor colorWithWhite:0.0 alpha:0.5] forState:UIControlStateNormal];
+    cancel.titleLabel.shadowOffset = CGSizeMake(0.0, -1.0);
+    cancel.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [cancel addTarget:self action:@selector(cancelTapped:) forControlEvents:UIControlEventTouchUpInside];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:cancel];
 
-    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleGrouped];
+    UIButton *save = [UIButton buttonWithType:UIButtonTypeCustom];
+    save.frame = CGRectMake(0.0, 0.0, 50.0, 30.0);
+    [save setTitle:@"Save" forState:UIControlStateNormal];
+    save.titleLabel.font = [UIFont boldSystemFontOfSize:13.0];
+    [save setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [save setTitleShadowColor:[UIColor colorWithWhite:0.0 alpha:0.5] forState:UIControlStateNormal];
+    save.titleLabel.shadowOffset = CGSizeMake(0.0, -1.0);
+    save.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
+    [save addTarget:self action:@selector(saveTapped:) forControlEvents:UIControlEventTouchUpInside];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:save];
+
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
     self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     self.tableView.dataSource = self;
     self.tableView.delegate = self;
     self.tableView.backgroundColor = [MTAppearance paper];
-    self.tableView.separatorColor = [MTAppearance sep];
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     [self.view addSubview:self.tableView];
 
     self.datePicker = [[UIDatePicker alloc] initWithFrame:CGRectZero];
@@ -237,18 +447,26 @@ static NSDate *MTDateFromISO(NSString *string)
     UIToolbar *toolbar = [[UIToolbar alloc] initWithFrame:CGRectMake(0.0, 0.0, 320.0, 44.0)];
     toolbar.barStyle = UIBarStyleBlack;
     toolbar.items = @[
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil],
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(doneEditing:)]
+        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace
+                                                      target:nil action:nil],
+        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                                                      target:self action:@selector(doneEditing:)]
     ];
 
-    self.dateField = [[UITextField alloc] initWithFrame:CGRectMake(0.0, 0.0, 160.0, 30.0)];
+    self.dateField = [[UITextField alloc] initWithFrame:CGRectZero];
     self.dateField.font = [UIFont systemFontOfSize:13.0];
     self.dateField.textColor = [MTAppearance ink];
-    self.dateField.textAlignment = NSTextAlignmentRight;
-    self.dateField.borderStyle = UITextBorderStyleNone;
+    self.dateField.backgroundColor = [UIColor whiteColor];
+    self.dateField.borderStyle = UITextBorderStyleRoundedRect;
     self.dateField.inputView = self.datePicker;
     self.dateField.inputAccessoryView = toolbar;
     self.dateField.text = [MTDisplayFormatter() stringFromDate:self.datePicker.date];
+
+    MTCalendarIconView *calendar = [[MTCalendarIconView alloc] initWithFrame:CGRectMake(0.0, 0.0, 22.0, 18.0)];
+    self.dateField.rightView = calendar;
+    self.dateField.rightViewMode = UITextFieldViewModeAlways;
+
+    [self updateFooter];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(keyboardDidShow:)
@@ -288,7 +506,51 @@ static NSDate *MTDateFromISO(NSString *string)
     [self.view endEditing:YES];
 }
 
-#pragma mark - Keyboard
+- (void)updateFooter
+{
+    BOOL canSend = self.draft.slug.length > 0;
+    CGFloat height = canSend ? 96.0 : 48.0;
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0,
+                                                              CGRectGetWidth(self.tableView.bounds),
+                                                              height)];
+    footer.backgroundColor = [MTAppearance paper];
+
+    UIView *topRule = [[UIView alloc] initWithFrame:CGRectMake(0.0, 0.0,
+                                                               CGRectGetWidth(footer.bounds), 1.0)];
+    topRule.backgroundColor = [MTAppearance sep];
+    [footer addSubview:topRule];
+
+    CGFloat noteY = 10.0;
+    if (canSend) {
+        UIButton *send = [UIButton buttonWithType:UIButtonTypeCustom];
+        send.frame = CGRectMake(12.0, 10.0, CGRectGetWidth(footer.bounds) - 24.0, 38.0);
+        [send setTitle:@"Send to Letterboxd" forState:UIControlStateNormal];
+        send.titleLabel.font = [UIFont boldSystemFontOfSize:14.0];
+        [send setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        [send setTitleShadowColor:[UIColor colorWithWhite:0.0 alpha:0.45] forState:UIControlStateNormal];
+        send.titleLabel.shadowOffset = CGSizeMake(0.0, -1.0);
+        [send setBackgroundImage:[MTAppearance dangerButtonImage] forState:UIControlStateNormal];
+        [send addTarget:self action:@selector(sendTapped) forControlEvents:UIControlEventTouchUpInside];
+        [footer addSubview:send];
+        noteY = 58.0;
+    }
+
+    UILabel *note = [[UILabel alloc] initWithFrame:CGRectMake(12.0, noteY,
+                                                              CGRectGetWidth(footer.bounds) - 24.0, 30.0)];
+    note.backgroundColor = [UIColor clearColor];
+    note.font = [MTAppearance smallFont];
+    note.textColor = [UIColor colorWithRed:0.482 green:0.482 blue:0.502 alpha:1.0];
+    note.textAlignment = NSTextAlignmentCenter;
+    note.numberOfLines = 0;
+    note.text = canSend
+        ? @"Experimental \u00b7 uses a session cookie on the relay"
+        : (self.draft.slug.length
+           ? @"Saves as a draft on this device \u00b7 export from Profile"
+           : @"Search result \u00b7 matches by tmdbID on CSV import");
+    [footer addSubview:note];
+
+    self.tableView.tableFooterView = footer;
+}
 
 - (void)keyboardDidShow:(NSNotification *)note
 {
@@ -310,44 +572,37 @@ static NSDate *MTDateFromISO(NSString *string)
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
 {
-    return 4;
+    return 1;
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    if (section == 2) return 4;
-    return 1;
+    return 6;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == 0) return 84.0;
-    if (indexPath.section == 1) return 78.0;
-    if (indexPath.section == 2 && indexPath.row == 1) return 120.0;
-    return 44.0;
-}
-
-- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section
-{
-    if (section == 2) {
-        return @"Drafts stay on this device. Export a CSV from Profile and import it at letterboxd.com/import.";
+    switch (indexPath.row) {
+        case 0: return 80.0;
+        case 1: return 72.0;
+        case 2: return 50.0;
+        case 3: return 104.0;
+        default: return 50.0;
     }
-    if (section == 3) {
-        return @"Experimental: the relay needs LB_SESSION_COOKIE. CSV export always works.";
-    }
-    return nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (indexPath.section == 0) {
-        MTLogHeaderCell *cell = [[MTLogHeaderCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    if (indexPath.row == 0) {
+        MTLogHeaderCell *cell = [[MTLogHeaderCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                        reuseIdentifier:nil];
         [cell configureWithDraft:self.draft];
         return cell;
     }
 
-    if (indexPath.section == 1) {
-        MTLogRatingCell *cell = [[MTLogRatingCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    if (indexPath.row == 1) {
+        MTLogRatingCell *cell = [[MTLogRatingCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                        reuseIdentifier:nil];
         [cell configureWithRating:self.draft.rating ? self.draft.rating.doubleValue : 0.0];
 
         __weak MTLogRatingCell *weakCell = cell;
@@ -359,50 +614,32 @@ static NSDate *MTDateFromISO(NSString *string)
         return cell;
     }
 
-    if (indexPath.section == 2) {
-        if (indexPath.row == 0) {
-            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-            cell.selectionStyle = UITableViewCellSelectionStyleNone;
-            cell.textLabel.text = @"Watched";
-            cell.textLabel.font = [MTAppearance bodyFont];
-            cell.textLabel.textColor = [MTAppearance ink];
-            cell.accessoryView = self.dateField;
-            return cell;
-        }
-
-        if (indexPath.row == 1) {
-            MTLogReviewCell *cell = [[MTLogReviewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-            cell.textView.text = self.draft.review;
-            cell.textView.delegate = self;
-            cell.placeholder.hidden = self.draft.review.length > 0;
-            self.reviewTextView = cell.textView;
-            self.reviewPlaceholder = cell.placeholder;
-            return cell;
-        }
-
-        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-        cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        cell.textLabel.font = [MTAppearance bodyFont];
-        cell.textLabel.textColor = [MTAppearance ink];
-        UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectZero];
-        toggle.tag = indexPath.row; // 2 = rewatch, 3 = like
-        [toggle addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
-        if (indexPath.row == 2) {
-            cell.textLabel.text = @"Rewatch";
-            toggle.on = self.draft.rewatch;
-        } else {
-            cell.textLabel.text = @"Like";
-            toggle.on = self.draft.liked;
-        }
-        cell.accessoryView = toggle;
+    if (indexPath.row == 2) {
+        MTLogWatchedCell *cell = [[MTLogWatchedCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                          reuseIdentifier:nil];
+        [cell setField:self.dateField];
         return cell;
     }
 
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
-    cell.textLabel.text = @"Send to Letterboxd";
-    cell.textLabel.textAlignment = NSTextAlignmentCenter;
-    cell.textLabel.font = [UIFont boldSystemFontOfSize:14.0];
-    cell.textLabel.textColor = [UIColor colorWithRed:0.64 green:0.20 blue:0.17 alpha:1.0];
+    if (indexPath.row == 3) {
+        MTLogReviewCell *cell = [[MTLogReviewCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                        reuseIdentifier:nil];
+        cell.textView.text = self.draft.review;
+        cell.textView.delegate = self;
+        cell.placeholder.hidden = self.draft.review.length > 0;
+        self.reviewTextView = cell.textView;
+        self.reviewPlaceholder = cell.placeholder;
+        return cell;
+    }
+
+    MTLogSwitchCell *cell = [[MTLogSwitchCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                    reuseIdentifier:nil];
+    if (indexPath.row == 4) {
+        [cell configureWithTitle:@"Rewatch" on:self.draft.rewatch tag:2];
+    } else {
+        [cell configureWithTitle:@"Like" on:self.draft.liked tag:3];
+    }
+    [cell.toggle addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
     return cell;
 }
 
@@ -419,16 +656,10 @@ static NSDate *MTDateFromISO(NSString *string)
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    if (indexPath.section == 2 && indexPath.row == 0) {
+    if (indexPath.row == 2) {
         [self.dateField becomeFirstResponder];
-        return;
-    }
-    if (indexPath.section == 2 && indexPath.row == 1) {
+    } else if (indexPath.row == 3) {
         [self.reviewTextView becomeFirstResponder];
-        return;
-    }
-    if (indexPath.section == 3) {
-        [self sendTapped];
     }
 }
 

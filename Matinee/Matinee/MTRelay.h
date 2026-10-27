@@ -22,6 +22,7 @@ typedef void (^MTRelayCompletion)(id json, NSError *error);
 - (void)health:(MTRelayCompletion)completion;
 - (void)session:(MTRelayCompletion)completion;
 - (void)feedForHandle:(NSString *)handle completion:(MTRelayCompletion)completion;
+- (void)feedForHandle:(NSString *)handle refresh:(BOOL)refresh completion:(MTRelayCompletion)completion;
 - (void)filmWithSlug:(NSString *)slug completion:(MTRelayCompletion)completion;
 - (void)searchForQuery:(NSString *)query completion:(MTRelayCompletion)completion;
 - (void)connectInput:(NSString *)input completion:(MTRelayCompletion)completion;

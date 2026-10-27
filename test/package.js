@@ -72,6 +72,12 @@ test('Info.plist declares the iOS 6 floor and armv7 capability', () => {
   includes(plist, '<key>LSRequiresIPhoneOS</key>');
 });
 
+test('Info.plist has literal bundle names, not unexpanded Xcode variables', () => {
+  includes(plist, '<key>CFBundleExecutable</key>\n\t<string>Matinee</string>');
+  includes(plist, '<key>CFBundleName</key>\n\t<string>Matinee</string>');
+  notOk(plist.includes('${'), 'unexpanded build setting');
+});
+
 test('Info.plist icon names resolve to files in Resources', () => {
   for (const name of ['Icon', 'Icon@2x', 'Icon-72', 'Icon-72@2x']) {
     ok(exists('Matinee/Matinee/Resources/' + name + '.png'), name + '.png');

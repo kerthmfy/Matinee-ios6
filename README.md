@@ -22,11 +22,13 @@ The phone never holds a Letterboxd password. It talks to the relay; the relay ta
 | Relay: diary, lists, film detail, image proxy, search, CSV/write shape | Working; relay suites pass offline and live against `letterboxd.com` |
 | Browser mock: diary, film, log sheet, lists, search, profile, CSV | Working; 29/29 DOM tests |
 | Installable mock: manifest, service worker, poster cache | Working; 4/4 service-worker tests |
-| UIKit target: 4 tabs, diary, film, log, lists, search, profile | Compiled with Theos (armv7, min iOS 6.0) and packaged; **device run pending** |
+| UIKit target: 4 tabs, diary, film, log, lists, search, profile | Running on an iPhone 4S with iOS 6.1.3; Theos armv7 build, min iOS 6.0 |
 | Direct log to Letterboxd | Live JSON write verified against the member's own account; the same request is covered by a local signed-in mock. `npm run cookie` captures a browser session, and `/api/session` validates it against the live site |
 | CSV → official Letterboxd import | Supported path |
 
-The browser mock is the visual reference. The Objective-C target is the same design translated to UIKit. It now compiles and packages with Theos against the armv7 slice of the 11.4 SDK, with a 6.0 deployment target; the `.deb` is in `packaging/theos/packages/`. It has not been launched on a physical iOS 6 device yet, so treat that as the next test. `docs/GUIDE.md` explains the exact toolchain.
+The browser mock is the visual reference. The Objective-C target translates the same design to UIKit: the orb-only Diary nav, custom tab icons, shaped back/Log controls, pinstriped section headers, bordered cards, green per-star fill, and a session-centric Profile. It builds with Theos against the armv7 slice of the 11.4 SDK at a 6.0 deployment target, packages to `packaging/theos/packages/`, and has been installed and checked on an iPhone 4S running iOS 6.1.3. `docs/GUIDE.md` explains the exact toolchain.
+
+Search results can open a draft log sheet, but they are not yet resolved to Letterboxd slugs, so sending directly from search is deferred. List detail shows the entries included in the RSS response and notes when the list has more; paging the full list is also deferred.
 
 ## Quick start
 
@@ -97,13 +99,13 @@ LB_USER_AGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.3
 EOF
 ```
 
-Use your own browser's UA, not the example verbatim. Replace the line if `LB_USER_AGENT` is already present. Restart the relay, then check **Profile → Test session** in the app, or:
+Use your own browser's UA, not the example verbatim. Replace the line if `LB_USER_AGENT` is already present. Restart the relay, then tap **Profile → Check session** in the app, or:
 
 ```bash
 curl -s http://127.0.0.1:3000/api/session
 ```
 
-`/api/session` returns `{ ok, configured, signedIn, reason, slug, detail }`. `configured` only means the env value exists; `signedIn` means Letterboxd accepted it. Profile shows **Write configured** after boot and **Write enabled** only after the session check succeeds.
+`/api/session` returns `{ ok, configured, signedIn, reason, slug, detail }`. `configured` only means the env value exists; `signedIn` means Letterboxd accepted it. Profile treats the endpoint as the source of truth and shows **Cookie valid**, **No cookie**, **Cookie expired**, **Relay offline**, or **LB unreachable**. **Check session** forces a fresh check after you restart the relay.
 
 ## How it fits together
 
@@ -179,7 +181,7 @@ Open `Matinee/Matinee.xcodeproj` in a toolchain that still has the iOS 6 SDK. Th
 
 **Toolchain:** Xcode 4.6.3 with the iOS 6.1 SDK is the clean option. Xcode 5.1.1 (with the iOS 6.1 simulator) can also build a 6.0 deployment target. Current Xcode cannot build 32-bit armv7, so a modern Mac needs a legacy VM or Theos. This tree builds with Theos and the 11.4 SDK's armv7 slice at a 6.0 deployment target; the resulting `.deb` is in `packaging/theos/packages/`. See `docs/GUIDE.md` for both routes.
 
-On first launch, open **Profile → Change server** and enter the relay's LAN address, for example `http://192.168.1.50:3000`. The default in `MTStore.m` is a placeholder; change it before building or set it on the device. Then **Connect a profile** with a handle, profile URL, or RSS URL.
+On first launch, open **Profile → Relay** and enter the relay's LAN address, for example `http://192.168.1.50:3000`. The default in `MTStore.m` is a placeholder; change it before building or set it on the device. Then tap **Diary handle** and enter a public handle, profile URL, or RSS URL. This is the public feed handle, not a Letterboxd sign-in.
 
 The app is not signed or notarized. Install it with Xcode to a jailbroken or provisioned device, or build the `.deb` in `packaging/theos/`.
 
@@ -195,7 +197,7 @@ There are two paths, and they are deliberately different:
 
    This needs no cookie, survives 2FA, and uses Letterboxd's official importer. It remains the low-risk path.
 
-2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same JSON log entry the site's own diary form posts. The relay fetches the film page to confirm `person.loggedIn`, gets the production `lid` and a fresh CSRF token from `/film/<slug>/json/`, then posts to `/api/v0/production-log-entries` with `X-CSRF-TOKEN`. Capture the cookie with `pbpaste | npm run cookie`, set `LB_USER_AGENT` to the browser's exact UA, restart the relay, and use **Profile → Test session** to confirm it. The request shape, signed-in detection, cookie forwarding, success (`logEntry.id`), rejection, invalid CSRF, Cloudflare challenge, expired-session, and `/api/session` paths are tested against a local HTTPS mock, and a live write has succeeded against the member's own account. It is off by default and returns `no_session` until configured.
+2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same JSON log entry the site's own diary form posts. The relay fetches the film page to confirm `person.loggedIn`, gets the production `lid` and a fresh CSRF token from `/film/<slug>/json/`, then posts to `/api/v0/production-log-entries` with `X-CSRF-TOKEN`. Capture the cookie with `pbpaste | npm run cookie`, set `LB_USER_AGENT` to the browser's exact UA, restart the relay, and use **Profile → Check session** to confirm it. The request shape, signed-in detection, cookie forwarding, success (`logEntry.id`), rejection, invalid CSRF, Cloudflare challenge, expired-session, and `/api/session` paths are tested against a local HTTPS mock, and a live write has succeeded against the member's own account. It is off by default and returns `no_session` until configured.
 
 Why not log in on the phone? It would mean handling a password, 2FA, cookie expiry, and CSRF on the device, and it would still be an unofficial write path. The relay keeps that blast radius on a machine you control, and the CSV path keeps the app useful without it.
 
@@ -223,11 +225,11 @@ ok   dom-flows:       14/14 passed
 ok   sw-cache:         4/4 passed
 ok   write-path:      35/35 passed
 ok   objc-sanity:     26/26 passed
-ok   package:         15/15 passed
+ok   package:         16/16 passed
 ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
 ```
 
-The offline total is **170 assertions across 11 suites**; with `--live` it is **187 assertions across 12 suites**. Search and direct write are exercised
+The offline total is **171 assertions across 11 suites**; with `--live` it is **188 assertions across 12 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
 real Letterboxd cookie validates against the live site, and a live diary write

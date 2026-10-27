@@ -177,6 +177,7 @@ const BANNED = [
   ['sizeWithAttributes:', 'iOS 7 text measuring'],
   ['boundingRectWithSize:options:attributes:context:', 'iOS 7 text measuring'],
   ['drawInRect:withAttributes:', 'iOS 7 text drawing'],
+  ['textContainerInset', 'iOS 7 text view inset'],
   ['systemFontOfSize:weight:', 'iOS 8 fonts'],
   ['UIFontDescriptor', 'iOS 7 fonts'],
   ['UIButtonTypeSystem', 'iOS 7 buttons'],
@@ -311,10 +312,14 @@ test('diary nav is the mark only, and the back item says Diary', () => {
   includes(diary, 'initWithTitle:@"Diary"', 'back item');
 });
 
-test('profile has no redundant Connect navigation button', () => {
+test('profile settings lead with the relay-owned session', () => {
   const profile = read('MTProfileViewController.m');
   notOk(/rightbarbuttonitem[\s\S]{0,100}@"connect/i.test(profile), 'no Connect nav button');
-  ok(profile.includes('Connect a profile'), 'connect row remains');
+  includes(profile, 'Letterboxd session', 'session status row');
+  includes(profile, 'Check session', 'recheck action');
+  includes(profile, 'Refresh cookie', 'cookie help action');
+  includes(profile, 'session:^(id json, NSError *error)', 'session endpoint is queried');
+  notOk(profile.includes('Connect a profile'), 'handle is not presented as sign-in');
 });
 
 test('four tabs are built in the app delegate', () => {

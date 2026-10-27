@@ -9,7 +9,14 @@
 #import "MTLogViewController.h"
 #import "MTRelay.h"
 #import "MTStarsView.h"
-#import <QuartzCore/QuartzCore.h>
+
+static NSString *MTFilmRatingCount(NSInteger count)
+{
+    if (count <= 0) return nil;
+    NSNumberFormatter *formatter = [[NSNumberFormatter alloc] init];
+    [formatter setNumberStyle:NSNumberFormatterDecimalStyle];
+    return [NSString stringWithFormat:@"%@ ratings", [formatter stringFromNumber:@(count)]];
+}
 
 @interface MTFilmViewController ()
 @property (nonatomic, strong) MTEntry *entry;
@@ -26,6 +33,9 @@
 @property (nonatomic, strong) UILabel *factsLabel;
 @property (nonatomic, strong) UILabel *reviewLabel;
 @property (nonatomic, strong) UILabel *synopsisLabel;
+@property (nonatomic, strong) UIView *reviewRule;
+@property (nonatomic, strong) UIView *synopsisRule;
+@property (nonatomic, strong) UIView *logRule;
 @property (nonatomic, strong) UIButton *logButton;
 @end
 
@@ -57,6 +67,8 @@
 
     self.poster = [[MTPosterImageView alloc] initWithFrame:CGRectZero];
     self.poster.layer.cornerRadius = 3.0;
+    self.poster.layer.borderColor = [UIColor colorWithWhite:0.0 alpha:0.10].CGColor;
+    self.poster.layer.borderWidth = 0.5;
     [self.contentView addSubview:self.poster];
 
     self.titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -67,7 +79,7 @@
 
     self.yearLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.yearLabel.font = [UIFont systemFontOfSize:13.0];
-    self.yearLabel.textColor = [MTAppearance muted];
+    self.yearLabel.textColor = [UIColor colorWithRed:0.467 green:0.467 blue:0.486 alpha:1.0];
     [self.contentView addSubview:self.yearLabel];
 
     self.averageStars = [[MTStarsView alloc] initWithFrame:CGRectZero];
@@ -76,7 +88,7 @@
 
     self.averageLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.averageLabel.font = [UIFont systemFontOfSize:12.0];
-    self.averageLabel.textColor = [MTAppearance muted];
+    self.averageLabel.textColor = [UIColor colorWithRed:0.420 green:0.420 blue:0.439 alpha:1.0];
     [self.contentView addSubview:self.averageLabel];
 
     self.userStars = [[MTStarsView alloc] initWithFrame:CGRectZero];
@@ -85,56 +97,85 @@
 
     self.userLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     self.userLabel.font = [UIFont systemFontOfSize:12.0];
-    self.userLabel.textColor = [MTAppearance muted];
+    self.userLabel.textColor = [UIColor colorWithRed:0.420 green:0.420 blue:0.439 alpha:1.0];
     self.userLabel.text = @"your rating";
     [self.contentView addSubview:self.userLabel];
 
     self.factsLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.factsLabel.font = [UIFont systemFontOfSize:12.5];
-    self.factsLabel.textColor = [MTAppearance ink];
+    self.factsLabel.font = [UIFont systemFontOfSize:11.5];
+    self.factsLabel.textColor = [UIColor colorWithRed:0.361 green:0.361 blue:0.380 alpha:1.0];
     self.factsLabel.numberOfLines = 0;
     [self.contentView addSubview:self.factsLabel];
 
+    self.reviewRule = [[UIView alloc] initWithFrame:CGRectZero];
+    self.reviewRule.backgroundColor = [MTAppearance sep];
+    [self.contentView addSubview:self.reviewRule];
+
     self.reviewLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.reviewLabel.font = [UIFont italicSystemFontOfSize:13.0];
-    self.reviewLabel.textColor = [MTAppearance ink];
+    self.reviewLabel.font = [UIFont systemFontOfSize:14.0];
+    self.reviewLabel.textColor = [UIColor colorWithRed:0.173 green:0.173 blue:0.188 alpha:1.0];
     self.reviewLabel.numberOfLines = 0;
     [self.contentView addSubview:self.reviewLabel];
 
+    self.synopsisRule = [[UIView alloc] initWithFrame:CGRectZero];
+    self.synopsisRule.backgroundColor = [MTAppearance sep];
+    [self.contentView addSubview:self.synopsisRule];
+
     self.synopsisLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.synopsisLabel.font = [UIFont systemFontOfSize:13.0];
-    self.synopsisLabel.textColor = [MTAppearance ink];
+    self.synopsisLabel.font = [UIFont systemFontOfSize:13.5];
+    self.synopsisLabel.textColor = [UIColor colorWithRed:0.173 green:0.173 blue:0.188 alpha:1.0];
     self.synopsisLabel.numberOfLines = 0;
     [self.contentView addSubview:self.synopsisLabel];
+
+    self.logRule = [[UIView alloc] initWithFrame:CGRectZero];
+    self.logRule.backgroundColor = [MTAppearance sep];
+    [self.contentView addSubview:self.logRule];
 
     self.logButton = [UIButton buttonWithType:UIButtonTypeCustom];
     [self.logButton setTitle:@"Log this film" forState:UIControlStateNormal];
     self.logButton.titleLabel.font = [UIFont boldSystemFontOfSize:14.0];
     [self.logButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [self.logButton setBackgroundImage:[self buttonImage] forState:UIControlStateNormal];
+    [self.logButton setTitleShadowColor:[UIColor colorWithWhite:0.0 alpha:0.5] forState:UIControlStateNormal];
+    self.logButton.titleLabel.shadowOffset = CGSizeMake(0.0, -1.0);
+    [self.logButton setBackgroundImage:[MTAppearance actionButtonImage] forState:UIControlStateNormal];
     [self.logButton addTarget:self action:@selector(logTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.contentView addSubview:self.logButton];
 
+    [self installNavigationButtons];
     [self populate];
     [self loadFilm];
 }
 
-- (UIImage *)buttonImage
+- (void)installNavigationButtons
 {
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(1.0, 38.0), YES, 0.0);
-    CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    NSArray *colors = @[
-        (__bridge id)[UIColor colorWithRed:0.34 green:0.55 blue:0.74 alpha:1.0].CGColor,
-        (__bridge id)[UIColor colorWithRed:0.17 green:0.35 blue:0.55 alpha:1.0].CGColor
-    ];
-    CGGradientRef gradient = CGGradientCreateWithColors(space, (__bridge CFArrayRef)colors, NULL);
-    CGContextDrawLinearGradient(ctx, gradient, CGPointZero, CGPointMake(0.0, 38.0), 0);
-    CGGradientRelease(gradient);
-    CGColorSpaceRelease(space);
-    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return [image resizableImageWithCapInsets:UIEdgeInsetsMake(0.0, 0.0, 0.0, 0.0)];
+    NSString *backTitle = @"Back";
+    NSArray *stack = self.navigationController.viewControllers;
+    if (stack.count >= 2) {
+        UIViewController *previous = stack[stack.count - 2];
+        if (previous.navigationItem.backBarButtonItem.title.length) {
+            backTitle = previous.navigationItem.backBarButtonItem.title;
+        } else if (previous.title.length) {
+            backTitle = previous.title;
+        }
+    }
+
+    UIButton *back = [MTAppearance barButtonWithTitle:backTitle
+                                                back:YES
+                                              target:self
+                                              action:@selector(backTapped:)];
+    self.navigationItem.hidesBackButton = YES;
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:back];
+
+    UIButton *log = [MTAppearance barButtonWithTitle:@"Log"
+                                                back:NO
+                                              target:self
+                                              action:@selector(logTapped:)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithCustomView:log];
+}
+
+- (void)backTapped:(id)sender
+{
+    [self.navigationController popViewControllerAnimated:YES];
 }
 
 - (void)viewWillLayoutSubviews
@@ -158,41 +199,65 @@
 
     CGSize titleSize = [self.titleLabel sizeThatFits:CGSizeMake(textW, 200.0)];
     self.titleLabel.frame = CGRectMake(textX, 12.0, textW, titleSize.height);
-    self.yearLabel.frame = CGRectMake(textX, CGRectGetMaxY(self.titleLabel.frame) + 2.0, textW, 17.0);
+    self.yearLabel.frame = CGRectMake(textX, CGRectGetMaxY(self.titleLabel.frame) + 1.0, textW, 17.0);
 
     CGFloat rowY = CGRectGetMaxY(self.yearLabel.frame) + 6.0;
-    self.averageStars.frame = CGRectMake(textX, rowY, 68.0, 13.0);
-    self.averageLabel.frame = CGRectMake(textX + 73.0, rowY, textW - 73.0, 15.0);
+    if (!self.averageStars.hidden) {
+        self.averageStars.frame = CGRectMake(textX, rowY, 68.0, 13.0);
+        self.averageLabel.frame = CGRectMake(textX + 73.0, rowY - 1.0, textW - 73.0, 15.0);
+        rowY += 18.0;
+    } else {
+        self.averageStars.frame = CGRectZero;
+        self.averageLabel.frame = CGRectZero;
+    }
 
-    rowY += 18.0;
-    self.userStars.frame = CGRectMake(textX, rowY, 68.0, 13.0);
-    self.userLabel.frame = CGRectMake(textX + 73.0, rowY, textW - 73.0, 15.0);
+    if (!self.userStars.hidden) {
+        self.userStars.frame = CGRectMake(textX, rowY, 68.0, 13.0);
+        self.userLabel.frame = CGRectMake(textX + 73.0, rowY - 1.0, textW - 73.0, 15.0);
+        rowY += 18.0;
+    } else {
+        self.userStars.frame = CGRectZero;
+        self.userLabel.frame = CGRectZero;
+    }
 
-    CGFloat contentBottom = MAX(CGRectGetMaxY(self.poster.frame), rowY + 20.0);
-    rowY = contentBottom + 10.0;
+    CGSize factsSize = self.factsLabel.text.length
+        ? [self.factsLabel sizeThatFits:CGSizeMake(textW, 300.0)]
+        : CGSizeZero;
+    self.factsLabel.frame = CGRectMake(textX, rowY + 5.0, textW, factsSize.height);
+    rowY = CGRectGetMaxY(self.factsLabel.frame);
 
-    CGSize factsSize = [self.factsLabel sizeThatFits:CGSizeMake(width - 24.0, 300.0)];
-    self.factsLabel.frame = CGRectMake(x + 12.0, rowY, width - 24.0, factsSize.height);
-    rowY = CGRectGetMaxY(self.factsLabel.frame) + 8.0;
+    CGFloat heroBottom = MAX(CGRectGetMaxY(self.poster.frame), rowY) + 12.0;
+    CGFloat ruleX = x + 12.0;
+    CGFloat ruleW = width - 24.0;
+
+    self.reviewRule.hidden = !self.reviewLabel.text.length;
+    self.reviewRule.frame = CGRectMake(ruleX, heroBottom, ruleW, 1.0);
+    rowY = heroBottom + 13.0;
 
     if (self.reviewLabel.text.length) {
-        CGSize reviewSize = [self.reviewLabel sizeThatFits:CGSizeMake(width - 24.0, 400.0)];
-        self.reviewLabel.frame = CGRectMake(x + 12.0, rowY, width - 24.0, reviewSize.height);
-        rowY = CGRectGetMaxY(self.reviewLabel.frame) + 10.0;
+        CGSize reviewSize = [self.reviewLabel sizeThatFits:CGSizeMake(ruleW, 400.0)];
+        self.reviewLabel.frame = CGRectMake(ruleX, rowY, ruleW, reviewSize.height);
+        rowY = CGRectGetMaxY(self.reviewLabel.frame) + 13.0;
     } else {
         self.reviewLabel.frame = CGRectZero;
     }
 
+    self.synopsisRule.hidden = !self.synopsisLabel.text.length;
+    self.synopsisRule.frame = CGRectMake(ruleX, rowY, ruleW, 1.0);
+    rowY += 13.0;
+
     if (self.synopsisLabel.text.length) {
-        CGSize synopsisSize = [self.synopsisLabel sizeThatFits:CGSizeMake(width - 24.0, 900.0)];
-        self.synopsisLabel.frame = CGRectMake(x + 12.0, rowY, width - 24.0, synopsisSize.height);
-        rowY = CGRectGetMaxY(self.synopsisLabel.frame) + 12.0;
+        CGSize synopsisSize = [self.synopsisLabel sizeThatFits:CGSizeMake(ruleW, 900.0)];
+        self.synopsisLabel.frame = CGRectMake(ruleX, rowY, ruleW, synopsisSize.height);
+        rowY = CGRectGetMaxY(self.synopsisLabel.frame) + 13.0;
     } else {
         self.synopsisLabel.frame = CGRectZero;
     }
 
-    self.logButton.frame = CGRectMake(x + 12.0, rowY, width - 24.0, 38.0);
-    rowY = CGRectGetMaxY(self.logButton.frame) + 16.0;
+    self.logRule.frame = CGRectMake(ruleX, rowY, ruleW, 1.0);
+    rowY += 13.0;
+    self.logButton.frame = CGRectMake(ruleX, rowY, ruleW, 38.0);
+    rowY = CGRectGetMaxY(self.logButton.frame) + 22.0;
 
     self.contentView.frame = CGRectMake(0.0, 0.0, viewWidth, rowY);
     self.scrollView.contentSize = CGSizeMake(viewWidth, rowY);
@@ -206,25 +271,29 @@
     NSMutableArray *meta = [NSMutableArray array];
     if (year > 0) [meta addObject:[NSString stringWithFormat:@"%ld", (long)year]];
     if (runtime.length) [meta addObject:runtime];
-    self.yearLabel.text = [meta componentsJoinedByString:@" · "];
+    self.yearLabel.text = [meta componentsJoinedByString:@" \u00b7 "];
 
     NSString *posterPath = self.film.poster.length ? self.film.poster : self.entry.poster;
     if (!posterPath.length) posterPath = self.film.posterCdn.length ? self.film.posterCdn : self.entry.posterCdn;
     [self.poster setRemoteURL:[MTRelay URLForPath:posterPath]];
 
+    self.averageStars.hidden = !(self.film.rating > 0.0);
+    self.averageLabel.hidden = self.averageStars.hidden;
     self.averageStars.rating = self.film.rating;
     self.averageLabel.text = self.film.rating > 0.0
         ? [NSString stringWithFormat:@"%.2f avg", self.film.rating]
-        : @"no average yet";
-    self.userStars.rating = self.entry.rating ? self.entry.rating.doubleValue : 0.0;
-    self.userLabel.hidden = !self.entry.rating;
+        : @"";
+
+    BOOL hasUserRating = self.entry.rating != nil;
+    self.userStars.hidden = !hasUserRating;
+    self.userLabel.hidden = !hasUserRating;
+    self.userStars.rating = hasUserRating ? self.entry.rating.doubleValue : 0.0;
 
     NSMutableArray *facts = [NSMutableArray array];
     if (self.film.directorsText.length) [facts addObject:self.film.directorsText];
-    if (self.film.genres.count) [facts addObject:[self.film.genres componentsJoinedByString:@" · "]];
-    if (self.film.ratingCount > 0) {
-        [facts addObject:[NSString stringWithFormat:@"%ld ratings", (long)self.film.ratingCount]];
-    }
+    if (self.film.genres.count) [facts addObject:[self.film.genres componentsJoinedByString:@" \u00b7 "]];
+    NSString *ratingCount = MTFilmRatingCount(self.film.ratingCount);
+    if (ratingCount.length) [facts addObject:ratingCount];
     self.factsLabel.text = [facts componentsJoinedByString:@"\n"];
 
     self.reviewLabel.text = self.entry.review.length
@@ -257,6 +326,19 @@
         ? UIModalPresentationFormSheet
         : UIModalPresentationFullScreen;
     [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations
+{
+    return UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad
+        ? UIInterfaceOrientationMaskAll
+        : UIInterfaceOrientationMaskPortrait;
+}
+
+- (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)orientation
+{
+    if (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad) return YES;
+    return orientation == UIInterfaceOrientationPortrait;
 }
 
 @end
