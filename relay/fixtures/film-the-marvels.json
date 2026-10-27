@@ -1,0 +1,46 @@
+{
+ "ok": true,
+ "slug": "the-marvels",
+ "title": "The Marvels",
+ "year": 2023,
+ "released": "2023-11-07",
+ "posterCdn": "https://a.ltrbxd.com/resized/film-poster/5/3/6/9/7/0/536970-the-marvels-0-600-0-900-crop.jpg?v=d084ca416c",
+ "rating": 2.4,
+ "ratingCount": 607993,
+ "reviewCount": 161592,
+ "runtime": 105,
+ "directors": [
+  "Nia DaCosta"
+ ],
+ "cast": [
+  "Brie Larson",
+  "Teyonah Parris",
+  "Iman Vellani",
+  "Samuel L. Jackson",
+  "Zawe Ashton",
+  "Gary Lewis",
+  "Park Seo-jun",
+  "Zenobia Shroff"
+ ],
+ "genres": [
+  "Science Fiction",
+  "Adventure",
+  "Action"
+ ],
+ "synopsis": "When her duties send her to an anomalous wormhole linked to a Kree revolutionary, Carol's powers become entangled with that of Jersey City super-fan Kamala Khan, aka Ms. Marvel, and Carol's estranged niece, now S.A.B.E.R. astronaut Captain Monica Rambeau. Together, this unlikely trio must team up and learn to work in concert to save the universe.",
+ "countries": [
+  {
+   "@type": "Country",
+   "name": "USA"
+  }
+ ],
+ "uid": "film:536970",
+ "csrf": "placeholder",
+ "loggable": true,
+ "signedIn": false,
+ "canonical": "https://letterboxd.com/film/the-marvels/",
+ "parsed": true,
+ "fetchedAt": "2026-10-23T14:04:30.107Z",
+ "poster": "/img?w=300&u=https%3A%2F%2Fa.ltrbxd.com%2Fresized%2Ffilm-poster%2F5%2F3%2F6%2F9%2F7%2F0%2F536970-the-marvels-0-600-0-900-crop.jpg%3Fv%3Dd084ca416c",
+ "posterLarge": "/img?w=600&u=https%3A%2F%2Fa.ltrbxd.com%2Fresized%2Ffilm-poster%2F5%2F3%2F6%2F9%2F7%2F0%2F536970-the-marvels-0-600-0-900-crop.jpg%3Fv%3Dd084ca416c"
+}

@@ -1,3 +1,32 @@
-.theos/
-packages/
+node_modules/
+
+# Relay cache is rebuilt from Letterboxd on first request.
+relay/.cache/
+
+# Local configuration. Never commit a session cookie or API key.
+.env
+.env.local
+
+# macOS
 .DS_Store
+
+# Logs and coverage
+*.log
+coverage/
+
+# Xcode
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Theos build products
+packaging/theos/.theos/
+packaging/theos/obj/
+packaging/theos/packages/
+packaging/theos/*.deb

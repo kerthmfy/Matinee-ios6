@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Matinee — icon</title>
+<style>
+  body { margin:0; padding:44px; background:#141518; color:#d7dae0; font-family:"Helvetica Neue",Helvetica,Arial,sans-serif; }
+  h1 { font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#858b96; font-weight:600; margin:0 0 26px; }
+  .row { display:flex; gap:38px; align-items:flex-end; flex-wrap:wrap; margin-bottom:44px; }
+  .item { display:flex; flex-direction:column; align-items:center; gap:10px; }
+  .cap { font-size:11px; color:#7d8490; }
+  .hero { width:512px; height:512px; border-radius:22.4%; overflow:hidden; box-shadow:0 30px 70px rgba(0,0,0,.6); }
+  .hero img, .small img { display:block; width:100%; height:100%; }
+  .small { border-radius:22.4%; overflow:hidden; box-shadow:0 8px 18px rgba(0,0,0,.55); }
+  .home { background:
+      radial-gradient(900px 500px at 30% 0%, #2a3550 0%, rgba(20,21,24,0) 60%),
+      linear-gradient(#101218,#1c1f26); border-radius:14px; padding:30px 26px; }
+  .dock { display:flex; gap:16px; justify-content:center; margin-top:26px; padding:8px 12px; border-radius:16px;
+          background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12); }
+  .dock .small { width:57px; height:57px; }
+</style>
+</head>
+<body>
+<h1>Matinee — app icon</h1>
+
+<div class="row">
+  <div class="item"><div class="hero"><img src="icon.svg" alt=""></div><div class="cap">512 · App Store</div></div>
+  <div class="item"><div class="small" style="width:180px;height:180px"><img src="icon.svg" alt=""></div><div class="cap">180 · iPhone @2x</div></div>
+  <div class="item"><div class="small" style="width:114px;height:114px"><img src="icon.svg" alt=""></div><div class="cap">114 · iOS 6 @2x</div></div>
+  <div class="item"><div class="small" style="width:76px;height:76px"><img src="icon.svg" alt=""></div><div class="cap">76 · iPad</div></div>
+</div>
+
+<div class="home">
+  <div class="row" style="margin:0; gap:26px; justify-content:center">
+    <div class="item"><div class="small" style="width:57px;height:57px"><img src="icon.svg" alt=""></div><div class="cap">57</div></div>
+    <div class="item"><div class="small" style="width:57px;height:57px;opacity:.55"><img src="icon.svg" alt=""></div><div class="cap">home screen</div></div>
+    <div class="item"><div class="small" style="width:57px;height:57px;opacity:.55"><img src="icon.svg" alt=""></div><div class="cap">home screen</div></div>
+  </div>
+  <div class="dock">
+    <div class="small"><img src="icon.svg" alt=""></div>
+  </div>
+</div>
+</body>
+</html>

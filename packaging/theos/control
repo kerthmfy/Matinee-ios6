@@ -1,0 +1,10 @@
+Package: com.matinee.app
+Name: Matinee
+Version: 1.0
+Architecture: iphoneos-arm
+Description: An iOS 6 Letterboxd client: diary, lists, search, and log drafts.
+Homepage: https://github.com/kerthmfy/Matinee-ios6
+Maintainer: Kerth Michael Fernandez Yadao <yadaokerthmichael@gmail.com>
+Author: Kerth Michael Fernandez Yadao <yadaokerthmichael@gmail.com>
+Section: Entertainment
+Depends: firmware (>= 6.0)
