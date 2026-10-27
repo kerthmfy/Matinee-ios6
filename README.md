@@ -23,7 +23,7 @@ The phone never holds a Letterboxd password. It talks to the relay; the relay ta
 | Browser mock: diary, film, log sheet, lists, search, profile, CSV | Working; 29/29 DOM tests |
 | Installable mock: manifest, service worker, poster cache | Working; 4/4 service-worker tests |
 | UIKit target: 4 tabs, diary, film, log, lists, search, profile | Compiled with Theos (armv7, min iOS 6.0) and packaged; **device run pending** |
-| Direct log to Letterboxd | Form and transport tested against a local signed-in mock; `npm run cookie` captures a browser session, and `/api/session` validates it against the live site (no live diary write attempted yet) |
+| Direct log to Letterboxd | Live JSON write verified against the member's own account; the same request is covered by a local signed-in mock. `npm run cookie` captures a browser session, and `/api/session` validates it against the live site |
 | CSV → official Letterboxd import | Supported path |
 
 The browser mock is the visual reference. The Objective-C target is the same design translated to UIKit. It now compiles and packages with Theos against the armv7 slice of the 11.4 SDK, with a 6.0 deployment target; the `.deb` is in `packaging/theos/packages/`. It has not been launched on a physical iOS 6 device yet, so treat that as the next test. `docs/GUIDE.md` explains the exact toolchain.
@@ -66,8 +66,9 @@ npm start
 | `MATINEE_MEMBER` | `kerthfyadao` | Public handle used when the app has no saved one |
 | `TMDB_API_KEY` | unset | Enables search; without it the app shows an explanatory note |
 | `LB_SESSION_COOKIE` | unset | Enables the experimental `POST /api/log` write path |
+| `LB_USER_AGENT` | modern Chrome UA | Match the browser that produced `cf_clearance`; a mismatch can trigger a Cloudflare challenge |
 
-`LB_SESSION_COOKIE` is a real letterboxd.com session cookie. Keep it on the relay; never put it in the app, a screenshot, or git. See `docs/GUIDE.md` for the trade-offs.
+`LB_SESSION_COOKIE` is a real letterboxd.com session cookie. Keep it on the relay; never put it in the app, a screenshot, or git. Cloudflare ties its clearance cookie to the browser that earned it, so also copy that browser's exact `User-Agent` into `LB_USER_AGENT`. See `docs/GUIDE.md` for the trade-offs.
 
 ### Capture a Letterboxd session
 
@@ -88,7 +89,15 @@ pbpaste | npm run cookie -- --force      # save even if validation fails
 pbpaste | npm run cookie -- --no-verify  # skip the network check
 ```
 
-Restart the relay, then check **Profile → Test session** in the app, or:
+Then copy the exact `User-Agent` request header from that same DevTools request into `.env`:
+
+```bash
+cat >> .env <<'EOF'
+LB_USER_AGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42'
+EOF
+```
+
+Use your own browser's UA, not the example verbatim. Replace the line if `LB_USER_AGENT` is already present. Restart the relay, then check **Profile → Test session** in the app, or:
 
 ```bash
 curl -s http://127.0.0.1:3000/api/session
@@ -112,7 +121,7 @@ curl -s http://127.0.0.1:3000/api/session
                                        ┌──────────────────────────────┼──────────────────────────────┐
                                        ▼                              ▼                              ▼
                               letterboxd.com RSS            letterboxd.com film pages         TMDB (optional)
-                              (diary + lists)               (JSON-LD, form, CSRF)             (search only)
+                              (diary + lists)               + first-party JSON (lid, CSRF)    (search only)
 ```
 
 The relay is the security boundary. Its image proxy accepts only `https://a.ltrbxd.com` and `https://image.tmdb.org`, clamps the requested width to 80–900, and keeps a 64 MB / 300-entry byte cache. A hostile URL cannot turn the relay into a general-purpose fetcher.
@@ -123,7 +132,7 @@ The relay is the security boundary. Its image proxy accepts only `https://a.ltrb
 matinee/
 ├── relay/
 │   ├── server.js          HTTP routes, static mock, cache, CSV/write API
-│   ├── lb.js              RSS + JSON-LD parsing, image URL rules, log form
+│   ├── lb.js              RSS + JSON-LD parsing, image URL rules, JSON write path
 │   ├── cookie.js          validate and save a browser session into .env
 │   ├── images.js          in-memory poster byte cache
 │   └── fixtures/          captured feed/film pages for deterministic tests
@@ -140,11 +149,11 @@ matinee/
 │   ├── cookie.js          cookie normalization, .env editing, permissions
 │   ├── relay-api.js       offline HTTP routes, static files, SSRF boundary
 │   ├── relay-search.js    TMDB search against a local HTTPS mock
-│   ├── relay-write.js     signed-in form post and /api/session against a local HTTPS mock
+│   ├── relay-write.js     signed-in JSON write and /api/session against a local HTTPS mock
 │   ├── dom-smoke.js       the original visual/interaction regressions
 │   ├── dom-flows.js       search, lists, connect, iPad split view
 │   ├── sw-cache.js        opaque poster caching without a browser
-│   ├── write-shape.js     validates the log form shape
+│   ├── write-shape.js     validates the film JSON and log-entry shape
 │   ├── objc-sanity.js     structure, imports, deployment target, banned APIs
 │   ├── package.js         Theos, Info.plist, icons, screenshots, docs
 │   ├── relay-live.js      live Letterboxd checks
@@ -184,9 +193,9 @@ There are two paths, and they are deliberately different:
    LetterboxdURI,tmdbID,imdbID,Title,Year,Directors,Rating,Rating10,WatchedDate,Rewatch,Tags,Review
    ```
 
-   This needs no cookie, survives 2FA, and is the only path that has been verified end to end.
+   This needs no cookie, survives 2FA, and uses Letterboxd's official importer. It remains the low-risk path.
 
-2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same form Letterboxd's own page posts, using the film page's CSRF token and `viewingableUid`. Capture the cookie with `pbpaste | npm run cookie`, restart the relay, and use **Profile → Test session** to confirm it. The form shape, signed-in detection, cookie forwarding, success, rejection, expired-session, and `/api/session` paths are tested against a local HTTPS mock. A real member cookie now passes `/api/session`, but no live diary write has been attempted yet, so real-account acceptance is still unverified. It is off by default and returns `no_session` until configured.
+2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same JSON log entry the site's own diary form posts. The relay fetches the film page to confirm `person.loggedIn`, gets the production `lid` and a fresh CSRF token from `/film/<slug>/json/`, then posts to `/api/v0/production-log-entries` with `X-CSRF-TOKEN`. Capture the cookie with `pbpaste | npm run cookie`, set `LB_USER_AGENT` to the browser's exact UA, restart the relay, and use **Profile → Test session** to confirm it. The request shape, signed-in detection, cookie forwarding, success (`logEntry.id`), rejection, invalid CSRF, Cloudflare challenge, expired-session, and `/api/session` paths are tested against a local HTTPS mock, and a live write has succeeded against the member's own account. It is off by default and returns `no_session` until configured.
 
 Why not log in on the phone? It would mean handling a password, 2FA, cookie expiry, and CSRF on the device, and it would still be an unofficial write path. The relay keeps that blast radius on a machine you control, and the CSV path keeps the app useful without it.
 
@@ -208,21 +217,21 @@ ok   secrets:          4/4 passed
 ok   cookie:          11/11 passed
 ok   relay-api:       20/20 passed
 ok   relay-search:     7/7 passed
-ok   relay-write:     12/12 passed
+ok   relay-write:     19/19 passed
 ok   dom-smoke:       15/15 passed
 ok   dom-flows:       14/14 passed
 ok   sw-cache:         4/4 passed
-ok   write-path:      33/33 passed
+ok   write-path:      35/35 passed
 ok   objc-sanity:     26/26 passed
 ok   package:         15/15 passed
 ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
 ```
 
-The offline total is **161 assertions across 11 suites**; with `--live` it is **178 assertions across 12 suites**. Search and direct write are exercised
+The offline total is **170 assertions across 11 suites**; with `--live` it is **187 assertions across 12 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
-real Letterboxd cookie now validates against the live site, but a live diary
-write is still the final proof.
+real Letterboxd cookie validates against the live site, and a live diary write
+returned a `logEntry.id` and appeared in the diary feed.
 
 `objc-sanity` is structural, not a compiler; the Theos package build is the compile check. It checks that every source exists, every quoted import resolves, every `.m` is in the Sources phase, the deployment target and ARC settings are present, the four icon slots exist, and no iOS 7+ API token appears in the target.
 
@@ -239,6 +248,6 @@ write is still the final proof.
 
 ## Legal
 
-Matinee is an unofficial client. It is not affiliated with Letterboxd or TMDB. Poster images and film metadata belong to their respective owners. The relay only reads public RSS and film pages; the optional write path uses the account owner's own session and is unsupported by Letterboxd. Respect Letterboxd's terms and do not hammer the site: the relay caches feeds for five minutes and posters for a day.
+Matinee is an unofficial client. It is not affiliated with Letterboxd or TMDB. Poster images and film metadata belong to their respective owners. The relay reads public RSS and film pages; the optional write path posts a diary entry with the account owner's own session and is unsupported by Letterboxd. Respect Letterboxd's terms and do not hammer the site: the relay caches feeds for five minutes and posters for a day.
 
 MIT licensed. See `LICENSE`.

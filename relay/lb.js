@@ -7,11 +7,15 @@
  * every upstream request and every parse, so the device only ever sees small,
  * stable JSON over a connection we control.
  *
- * Two upstream surfaces are used:
+ * Upstream surfaces:
  *   - /<handle>/rss/          public, no auth, carries diary entries and lists
- *   - /film/<slug>/           public HTML; JSON-LD for metadata, form for uid
+ *   - /film/<slug>/           public HTML; JSON-LD for metadata, session state
+ *   - /film/<slug>/json/      public JSON; lid + CSRF token for writes
+ *   - /api/v0/production-log-entries
+ *                             cookie-authenticated write, used by the site itself
  *
- * The official API is request-only and is not used here.
+ * The official developer API is request-only and is not used here; this module
+ * only reads the site's own first-party endpoints.
  */
 
 const https = require('https');
@@ -21,9 +25,15 @@ const { URL } = require('url');
 // browser -- old UAs collect Cloudflare challenges. Direct mode (device ->
 // letterboxd) is the only place the iOS 6 UA is correct, and it lives in the
 // app, not here.
-const UA =
+//
+// Cloudflare ties cf_clearance to the browser that passed the challenge, so a
+// write can still be challenged if this UA does not match the cookie's browser.
+// LB_USER_AGENT lets the relay copy the exact UA from that browser.
+const DEFAULT_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const UA =
+  (process.env.LB_USER_AGENT || '').trim() || DEFAULT_UA;
 
 const TIMEOUT_MS = 15000;
 const MAX_REDIRECTS = 3;
@@ -523,37 +533,137 @@ function proxyPath(posterCdn, width) {
 /* write path (experimental)                                           */
 /* ------------------------------------------------------------------ */
 
-const SAVE_URL = LB_ORIGIN + '/s/save-diary-entry';
+const FILM_JSON_URL = (slug) => LB_ORIGIN + '/film/' + slug + '/json/';
+const LOG_ENTRY_URL = LB_ORIGIN + '/api/v0/production-log-entries';
+
+function responseText(res) {
+  return res.body ? res.body.toString('utf8') : '';
+}
 
 /**
- * Post a diary entry using the member's own session cookie.
- *
- * Unsupported, cookie-based, and off by default. The relay only attempts this
- * when LB_SESSION_COOKIE is set. Field names and the 0-10 rating range were
- * read off a live film page, not inferred.
+ * Cloudflare challenges are 403 HTML with `cf-mitigated: challenge`; older
+ * interstitials only carry the "Just a moment..." title. A challenge means the
+ * request never reached Letterboxd, so it is not a diary rejection.
  */
+function isChallenge(res) {
+  const flag = String(res.headers['cf-mitigated'] || '').toLowerCase();
+  if (flag === 'challenge') return true;
+  return (
+    res.status === 403 &&
+    /<title>\s*(?:Just a moment|Attention Required)/i.test(responseText(res))
+  );
+}
+
+function challengeResult(stage, res) {
+  return {
+    ok: false,
+    status: res.status,
+    reason: 'challenge',
+    detail:
+      'Cloudflare challenged the ' + stage + ' request. Copy a fresh ' +
+      'LB_SESSION_COOKIE from the browser and set LB_USER_AGENT to the exact ' +
+      'User-Agent that produced cf_clearance, then restart the relay.',
+  };
+}
+
 /**
- * Build the form body exactly as Letterboxd's own log form would.
- *
- * Field names and the 0-10 range come from a live film page (see
- * fixtures/film-form-excerpt.html), not from guesswork. Rating on the device
- * is 0.5-5 stars, so it is doubled here.
+ * Parse the film page's JSON endpoint. This is what the site's own log form
+ * uses to discover the production `lid` and a session-bound CSRF token.
  */
-function buildLogBody(film, opts) {
-  const rating = opts.rating == null ? 0 : Math.round(Number(opts.rating) * 2);
-  const form = new URLSearchParams();
-  form.set('__csrf', film.csrf || '');
-  form.set('viewingId', '');
-  form.set('viewingableUid', film.uid || '');
-  form.set('specifiedDate', 'true');
-  form.set('viewingDateStr', opts.watchedDate || '');
-  form.set('rating', String(Math.max(0, Math.min(10, rating))));
-  form.set('rewatch', opts.rewatch ? 'true' : '');
-  form.set('liked', opts.liked ? 'true' : '');
-  form.set('review', opts.review || '');
-  form.set('tags', opts.tags || '');
-  form.set('containsSpoilers', opts.spoilers ? 'true' : '');
-  return form.toString();
+function parseFilmJson(input) {
+  let data = input;
+  if (typeof input === 'string') {
+    try {
+      data = JSON.parse(input);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!data || typeof data !== 'object' || data.result !== true) return null;
+
+  const pick = (key) =>
+    typeof data[key] === 'string' && data[key] ? data[key] : null;
+  return {
+    result: true,
+    csrf: pick('csrf'),
+    lid: pick('lid'),
+    uid: pick('uid'),
+    slug: pick('slug'),
+    name: pick('name'),
+  };
+}
+
+async function fetchFilmJson(slug, cookie) {
+  const headers = { Accept: 'application/json' };
+  if (cookie) headers.Cookie = cookie;
+  const res = await request(FILM_JSON_URL(slug), { headers });
+  return {
+    status: res.status,
+    headers: res.headers,
+    body: responseText(res),
+    parsed: parseFilmJson(responseText(res)),
+  };
+}
+
+function normalizeRating(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!isFinite(n) || n <= 0) return null;
+  const clamped = Math.min(5, Math.max(0.5, n));
+  return Math.round(clamped * 2) / 2;
+}
+
+function normalizeTags(value) {
+  const raw = Array.isArray(value) ? value : String(value == null ? '' : value).split(',');
+  const seen = new Set();
+  const tags = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    const tag = item.trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/**
+ * Build the JSON body the site's own log form posts.
+ *
+ * Ratings are already stars (0.5-5), unlike the legacy form's 0-10 range.
+ * Tags arrive as one comma-separated string from the iOS app and become an
+ * array. A blank review is omitted entirely; a non-blank one becomes the
+ * review object so `containsSpoilers` travels with it.
+ */
+function buildLogEntry(film, opts) {
+  const o = opts || {};
+  const entry = {
+    productionId: (film && film.lid) || '',
+    tags: normalizeTags(o.tags),
+    like: Boolean(o.liked),
+  };
+
+  const rating = normalizeRating(o.rating);
+  if (rating != null) entry.rating = rating;
+
+  if (o.watchedDate) {
+    entry.diaryDetails = {
+      diaryDate: String(o.watchedDate),
+      rewatch: Boolean(o.rewatch),
+    };
+  }
+
+  const review = o.review == null ? '' : String(o.review);
+  if (review.trim()) {
+    entry.review = {
+      text: review,
+      containsSpoilers: Boolean(o.spoilers),
+    };
+  }
+
+  return entry;
 }
 
 /**
@@ -595,13 +705,25 @@ async function submitLog(opts) {
     };
   }
 
-  let film;
+  let pageRes;
   try {
-    film = parseFilm((await fetchFilm(opts.slug, cookie)).html, opts.slug);
+    pageRes = await request(FILM_URL(opts.slug), {
+      headers: { Cookie: cookie },
+    });
   } catch (e) {
     return { ok: false, reason: 'film_unreachable', detail: String(e.message) };
   }
+  if (isChallenge(pageRes)) return challengeResult('film page', pageRes);
+  if (pageRes.status !== 200) {
+    return {
+      ok: false,
+      status: pageRes.status,
+      reason: 'film_unreachable',
+      detail: 'Film page returned HTTP ' + pageRes.status + '.',
+    };
+  }
 
+  const film = parseFilm(responseText(pageRes), opts.slug);
   if (!film.uid) {
     return {
       ok: false,
@@ -618,42 +740,124 @@ async function submitLog(opts) {
         'missing, expired, or from a signed-out browser.',
     };
   }
-  if (!film.csrf) {
+
+  // The film JSON endpoint is the site's own source for `lid` and a fresh
+  // CSRF token. Falling back to the page token keeps older markup working.
+  let metaRes;
+  try {
+    metaRes = await fetchFilmJson(opts.slug, cookie);
+  } catch (e) {
+    return { ok: false, reason: 'film_unreachable', detail: String(e.message) };
+  }
+  if (isChallenge(metaRes)) return challengeResult('film JSON', metaRes);
+  if (metaRes.status !== 200) {
+    return {
+      ok: false,
+      status: metaRes.status,
+      reason: 'film_unreachable',
+      detail: 'Film JSON returned HTTP ' + metaRes.status + '.',
+    };
+  }
+  const meta = metaRes.parsed;
+  if (!meta) {
+    return {
+      ok: false,
+      status: metaRes.status,
+      reason: 'film_json_invalid',
+      detail: 'Film JSON was not the object Letterboxd normally returns.',
+    };
+  }
+  if (!meta.lid) {
+    return {
+      ok: false,
+      reason: 'no_lid',
+      detail: 'Film JSON did not expose a production lid.',
+    };
+  }
+  const csrf = meta.csrf || film.csrf;
+  if (!csrf) {
     return {
       ok: false,
       reason: 'no_csrf',
-      detail: 'The film page did not expose a CSRF token to submit with.',
+      detail: 'Neither the film JSON nor the film page exposed a CSRF token.',
     };
   }
 
-  const body = buildLogBody(film, opts);
-
+  const entry = buildLogEntry(meta, opts);
   let res;
   try {
-    res = await request(SAVE_URL, {
+    res = await request(LOG_ENTRY_URL, {
       method: 'POST',
       headers: {
         Cookie: cookie,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Origin: 'https://letterboxd.com',
+        Accept: 'application/json',
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-CSRF-TOKEN': csrf,
+        Origin: LB_ORIGIN,
         Referer: FILM_URL(opts.slug),
-        Accept: 'text/html,application/xhtml+xml',
       },
-      body,
+      body: JSON.stringify(entry),
     });
   } catch (e) {
     return { ok: false, reason: 'network', detail: String(e.message) };
   }
+  if (isChallenge(res)) return challengeResult('log-entry', res);
 
-  const ok = res.status === 200 || res.status === 302;
+  const text = responseText(res);
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    data = null;
+  }
+
+  const logEntryId =
+    data && data.logEntry && typeof data.logEntry.id === 'string'
+      ? data.logEntry.id
+      : null;
+
+  if (res.status === 200 && logEntryId) {
+    return {
+      ok: true,
+      status: res.status,
+      reason: 'submitted',
+      detail: 'Letterboxd created diary entry ' + logEntryId + '.',
+      id: logEntryId,
+      uid: film.uid,
+      lid: meta.lid,
+    };
+  }
+
+  if (res.status === 403 && /invalid csrf token/i.test(text)) {
+    return {
+      ok: false,
+      status: res.status,
+      reason: 'no_csrf',
+      detail:
+        'Letterboxd rejected the CSRF token. Copy a fresh session cookie and ' +
+        'restart the relay before retrying.',
+    };
+  }
+
+  let detail = 'Letterboxd returned HTTP ' + res.status + '.';
+  if (data && typeof data.message === 'string' && data.message) {
+    detail = data.message;
+  } else if (text.trim()) {
+    const snippet = text
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180);
+    if (snippet) detail += ' ' + snippet;
+  }
+
   return {
-    ok,
+    ok: false,
     status: res.status,
-    reason: ok ? 'submitted' : 'rejected',
-    detail: ok
-      ? 'Letterboxd accepted the form post (unverified end-to-end; check your diary).'
-      : 'Letterboxd returned HTTP ' + res.status + '.',
+    reason: 'rejected',
+    detail,
     uid: film.uid,
+    lid: meta.lid,
   };
 }
 
@@ -661,6 +865,7 @@ async function submitLog(opts) {
 
 module.exports = {
   UA,
+  DEFAULT_UA,
   HANDLE_RE,
   parseHandle,
   request,
@@ -671,14 +876,17 @@ module.exports = {
   fetchFeed,
   parseFilm,
   fetchFilm,
+  parseFilmJson,
+  fetchFilmJson,
   parseRuntime,
   imageUrl,
   fetchImage,
   proxyPath,
-  buildLogBody,
+  buildLogEntry,
   checkSession,
   submitLog,
   FEED_URL,
   FILM_URL,
-  SAVE_URL,
+  FILM_JSON_URL,
+  LOG_ENTRY_URL,
 };

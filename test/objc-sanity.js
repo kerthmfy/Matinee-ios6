@@ -283,11 +283,13 @@ test('feed, film, search, connect, and log endpoints are wired', () => {
   }
 });
 
-test('rating is sent 0-5 from the phone and converted by the relay', () => {
+test('rating is sent 0-5 from the phone and kept in stars by the relay', () => {
   const relay = read('MTRelay.m');
   includes(relay, 'body[@"rating"] = draft.rating;', 'rating field');
   const write = fs.readFileSync(path.join(ROOT, 'relay', 'lb.js'), 'utf8');
-  includes(write, 'Math.round(Number(opts.rating) * 2)', 'relay half-star conversion');
+  includes(write, 'function normalizeRating', 'relay rating normalization');
+  includes(write, 'entry.rating = rating', 'rating passed through in stars');
+  notOk(write.includes('opts.rating) * 2'), 'relay must not convert back to 0-10');
 });
 
 /* ------------------------------------------------------------------ */

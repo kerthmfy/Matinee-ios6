@@ -48,16 +48,21 @@ async function main() {
   );
   console.log('film-the-marvels.json', film.title, film.rating, film.runtime + 'min');
 
-  // A frozen snippet of the real log form, used to prove the write path's
-  // field names and CSRF handling without touching the live site.
+  // A frozen snippet of the real film page, used to prove uid/CSRF/session
+  // parsing without touching the live site. Redact the token: it is session
+  // bound and must never enter git or a screenshot.
   const html = filmRes.html;
   const uidScript = /<script[^>]*>[\s\S]*?viewingable\.uid[\s\S]*?<\/script>/i.exec(html);
   const form = /<form\b[^>]*save-diary-entry[\s\S]*?<\/form>/i.exec(html);
   if (!form) throw new Error('no log form in film page');
   const excerpt =
     (uidScript ? uidScript[0] : '') + '\n' + form[0];
-  fs.writeFileSync(path.join(OUT, 'film-form-excerpt.html'), excerpt);
-  console.log('film-form-excerpt.html', excerpt.length + 'B');
+  const redacted = excerpt.replace(
+    /(supermodelCSRF\s*=\s*['"])[^'"]*([^'"]*['"])/g,
+    '$1fixture-csrf$2'
+  );
+  fs.writeFileSync(path.join(OUT, 'film-form-excerpt.html'), redacted);
+  console.log('film-form-excerpt.html', redacted.length + 'B (CSRF redacted)');
 }
 
 main().catch((e) => {

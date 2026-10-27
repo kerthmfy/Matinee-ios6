@@ -45,7 +45,7 @@ function lineAt(text, index) {
 function isPlaceholder(value) {
   if (!value || value.length < 20) return true;
   if (/[<>…]/.test(value)) return true;
-  if (/(?:placeholder|paste|example|fake|dummy|test|old|new|xyz|abc)/i.test(value)) return true;
+  if (/(?:placeholder|paste|example|fake|dummy|fixture|test|old|new|xyz|abc)/i.test(value)) return true;
   return false;
 }
 
@@ -55,6 +55,7 @@ const patterns = [
   ['TMDB API key', /TMDB_API_KEY\s*=\s*['"]?([A-Za-z0-9]{20,})/g],
   ['Letterboxd session header', /LB_SESSION_COOKIE\s*=\s*['"]?([^'"\s]{20,})/g],
   ['Letterboxd user token', /letterboxd\.user\.CURRENT\s*=\s*([^;'"\s]{20,})/g],
+  ['Letterboxd CSRF token', /supermodelCSRF\s*=\s*['"]([^'"]{12,})['"]/g],
   ['Cloudflare clearance', /cf_clearance\s*=\s*([^;'"\s]{20,})/g],
   ['AWS access key', /AKIA[0-9A-Z]{16}/g],
   ['GitHub token', /gh[pousr]_[A-Za-z0-9]{30,}/g],

@@ -5,9 +5,10 @@
  *
  * This is the closest we can get to a real log post without a member's
  * Letterboxd cookie: the relay's own submitLog() runs against a local HTTPS
- * server that serves the captured film form with a signed-in CSRF token and
- * records the form POST. It proves the cookie is forwarded, the uid/CSRF are
- * parsed, the body fields are right, and success/rejection are distinguished.
+ * server that serves the captured film page, the film JSON endpoint, and the
+ * production-log-entries API. It proves the cookie is forwarded, the lid and
+ * fresh CSRF are used, the JSON body is right, and success, rejection,
+ * challenge, and expired-session responses are distinguished.
  *
  *   node test/relay-write.js
  */
@@ -23,10 +24,15 @@ const excerpt = fs.readFileSync(
 );
 const signedInHtml = excerpt +
   "<script>supermodelCSRF = 'test-csrf'; person.loggedIn = true;</script>";
+const signedInWithoutToken =
+  "<script>data.viewingable.uid = 'film:536970'; person.loggedIn = true;</script>";
 
 async function main() {
   let mode = 'signedin';
+  let jsonMode = 'ok';
   let postStatus = 200;
+  let postChallenge = false;
+  let postCsrfFail = false;
   const seen = [];
 
   const letterboxd = await startTls((req, res) => {
@@ -36,26 +42,74 @@ async function main() {
       headers: req.headers,
       body: '',
     };
-    seen.push(record);
 
-    if (req.method === 'GET' && (req.url === '/film/the-marvels/' || req.url === '/film/primer/')) {
-      if (mode === 'missing') {
-        res.writeHead(404, { 'Content-Type': 'text/html' });
-        res.end('missing');
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(mode === 'signedout' ? excerpt : signedInHtml);
-      return;
+    function finish(status, headers, body) {
+      res.writeHead(status, headers);
+      res.end(body);
     }
 
-    if (req.method === 'POST' && req.url === '/s/save-diary-entry') {
+    if (req.method === 'GET') {
+      seen.push(record);
+      if (req.url === '/film/the-marvels/' || req.url === '/film/primer/') {
+        if (mode === 'missing') return finish(404, { 'Content-Type': 'text/html' }, 'missing');
+        if (mode === 'signedout') return finish(200, { 'Content-Type': 'text/html' }, excerpt);
+        if (mode === 'signedin-nocsrf') {
+          return finish(200, { 'Content-Type': 'text/html' }, signedInWithoutToken);
+        }
+        return finish(200, { 'Content-Type': 'text/html; charset=utf-8' }, signedInHtml);
+      }
+      if (req.url === '/film/the-marvels/json/') {
+        if (jsonMode === 'missing') return finish(404, { 'Content-Type': 'text/html' }, 'missing');
+        if (jsonMode === 'malformed') return finish(200, { 'Content-Type': 'text/html' }, '<html>nope</html>');
+        if (jsonMode === 'challenge') {
+          return finish(403, { 'Content-Type': 'text/html', 'cf-mitigated': 'challenge' },
+            '<html><head><title>Just a moment...</title></head></html>');
+        }
+        if (jsonMode === 'nolid') {
+          return finish(200, { 'Content-Type': 'application/json' },
+            JSON.stringify({ result: true, csrf: 'json-csrf', uid: 'film:536970' }));
+        }
+        if (jsonMode === 'nocsrf') {
+          return finish(200, { 'Content-Type': 'application/json' },
+            JSON.stringify({ result: true, lid: '6YA', uid: 'film:536970' }));
+        }
+        return finish(200, { 'Content-Type': 'application/json' }, JSON.stringify({
+          result: true,
+          csrf: 'json-csrf',
+          lid: '6YA',
+          uid: 'film:536970',
+          type: 'film',
+          typeName: 'film',
+          slug: 'the-marvels',
+          name: 'The Marvels',
+        }));
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/api/v0/production-log-entries') {
+      seen.push(record);
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
         record.body = Buffer.concat(chunks).toString('utf8');
-        res.writeHead(postStatus, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(postStatus === 200 ? 'saved' : 'nope');
+        if (postChallenge) {
+          return finish(403, { 'Content-Type': 'text/html', 'cf-mitigated': 'challenge' },
+            '<html><head><title>Just a moment...</title></head></html>');
+        }
+        if (postCsrfFail) {
+          return finish(403, { 'Content-Type': 'text/plain' }, 'Invalid CSRF token');
+        }
+        if (postStatus === 200) {
+          return finish(200, { 'Content-Type': 'application/json' }, JSON.stringify({
+            logEntry: {
+              id: 'log123',
+              name: 'test diary entry',
+              production: { id: '6YA' },
+            },
+          }));
+        }
+        return finish(postStatus, { 'Content-Type': 'application/json' },
+          JSON.stringify({ error: true, message: 'Invalid rating' }));
       });
       return;
     }
@@ -70,12 +124,29 @@ async function main() {
   process.env.MATINEE_OFFLINE = '1';
   delete process.env.TMDB_API_KEY;
   delete process.env.MATINEE_TMDB_ORIGIN;
+  delete process.env.LB_USER_AGENT;
 
   const lb = require('../relay/lb');
   const { createServer } = require('../relay/server');
   const relay = createServer();
   const relayPort = await listen(relay);
   const base = 'http://127.0.0.1:' + relayPort;
+
+  function reset(overrides) {
+    mode = 'signedin';
+    jsonMode = 'ok';
+    postStatus = 200;
+    postChallenge = false;
+    postCsrfFail = false;
+    seen.length = 0;
+    if (overrides) {
+      if (overrides.mode) mode = overrides.mode;
+      if (overrides.jsonMode) jsonMode = overrides.jsonMode;
+      if (overrides.postStatus) postStatus = overrides.postStatus;
+      if (overrides.postChallenge) postChallenge = overrides.postChallenge;
+      if (overrides.postCsrfFail) postCsrfFail = overrides.postCsrfFail;
+    }
+  }
 
   async function postLog(value) {
     const res = await fetch(base + '/api/log', {
@@ -89,7 +160,8 @@ async function main() {
 
   testAsync('the test origins point at the local Letterboxd mock', () => {
     includes(lb.FILM_URL('the-marvels'), letterboxd.origin);
-    eq(lb.SAVE_URL, letterboxd.origin + '/s/save-diary-entry');
+    includes(lb.FILM_JSON_URL('the-marvels'), letterboxd.origin);
+    eq(lb.LOG_ENTRY_URL, letterboxd.origin + '/api/v0/production-log-entries');
   });
 
   testAsync('no session cookie returns before any network request', async () => {
@@ -103,10 +175,8 @@ async function main() {
     process.env.LB_SESSION_COOKIE = previous;
   });
 
-  testAsync('a signed-in form is posted with the captured fields', async () => {
-    mode = 'signedin';
-    postStatus = 200;
-    seen.length = 0;
+  testAsync('a signed-in page and film JSON produce a JSON log entry', async () => {
+    reset();
     const result = await lb.submitLog({
       slug: 'the-marvels',
       cookie: 'letterboxd.signed.in.as=test-cookie',
@@ -122,39 +192,40 @@ async function main() {
     eq(result.ok, true);
     eq(result.status, 200);
     eq(result.reason, 'submitted');
+    eq(result.id, 'log123');
     eq(result.uid, 'film:536970');
+    eq(result.lid, '6YA');
 
-    const get = seen.find((r) => r.method === 'GET');
-    ok(get, 'film GET');
-    eq(get.url, '/film/the-marvels/');
-    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
+    const page = seen.find((r) => r.method === 'GET' && r.url === '/film/the-marvels/');
+    const meta = seen.find((r) => r.method === 'GET' && r.url === '/film/the-marvels/json/');
+    ok(page, 'film page GET');
+    ok(meta, 'film JSON GET');
+    eq(page.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
+    eq(meta.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
+    includes(meta.headers.accept, 'application/json');
 
     const post = seen.find((r) => r.method === 'POST');
-    ok(post, 'save POST');
-    eq(post.url, '/s/save-diary-entry');
+    ok(post, 'log-entry POST');
+    eq(post.url, '/api/v0/production-log-entries');
     eq(post.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
-    eq(post.headers.origin, 'https://letterboxd.com');
+    eq(post.headers.origin, letterboxd.origin);
     eq(post.headers.referer, letterboxd.origin + '/film/the-marvels/');
-    includes(post.headers['content-type'], 'application/x-www-form-urlencoded');
+    includes(post.headers['content-type'], 'application/json');
+    eq(post.headers['x-csrf-token'], 'json-csrf');
+    includes(post.headers.accept, 'application/json');
 
-    const form = new URLSearchParams(post.body);
-    eq(form.get('__csrf'), 'test-csrf');
-    eq(form.get('viewingId'), '');
-    eq(form.get('viewingableUid'), 'film:536970');
-    eq(form.get('specifiedDate'), 'true');
-    eq(form.get('viewingDateStr'), '2026-10-24');
-    eq(form.get('rating'), '8');
-    eq(form.get('rewatch'), 'true');
-    eq(form.get('liked'), 'true');
-    eq(form.get('review'), 'line one & "quotes"');
-    eq(form.get('tags'), 'marvel, 35mm');
-    eq(form.get('containsSpoilers'), 'true');
+    eq(JSON.parse(post.body), {
+      productionId: '6YA',
+      tags: ['marvel', '35mm'],
+      like: true,
+      rating: 4,
+      diaryDetails: { diaryDate: '2026-10-24', rewatch: true },
+      review: { text: 'line one & "quotes"', containsSpoilers: true },
+    });
   });
 
   testAsync('/api/log uses the relay session cookie and maps the body', async () => {
-    mode = 'signedin';
-    postStatus = 200;
-    seen.length = 0;
+    reset();
     const { res, body } = await postLog({
       slug: 'the-marvels',
       rating: 5,
@@ -166,21 +237,38 @@ async function main() {
     eq(res.status, 200);
     eq(body.ok, true);
     eq(body.reason, 'submitted');
-    const get = seen.find((r) => r.method === 'GET');
+    eq(body.id, 'log123');
+
+    const page = seen.find((r) => r.method === 'GET' && r.url === '/film/the-marvels/');
     const post = seen.find((r) => r.method === 'POST');
-    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
-    const form = new URLSearchParams(post.body);
-    eq(form.get('rating'), '10');
-    eq(form.get('viewingDateStr'), '2026-10-25');
-    eq(form.get('review'), 'route review');
-    eq(form.get('liked'), 'true');
-    eq(form.get('rewatch'), '');
+    eq(page.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
+    eq(post.headers['x-csrf-token'], 'json-csrf');
+    eq(JSON.parse(post.body), {
+      productionId: '6YA',
+      tags: [],
+      like: true,
+      rating: 5,
+      diaryDetails: { diaryDate: '2026-10-25', rewatch: false },
+      review: { text: 'route review', containsSpoilers: false },
+    });
   });
 
-  testAsync('a 403 from Letterboxd is reported as rejected, not success', async () => {
-    mode = 'signedin';
-    postStatus = 403;
-    seen.length = 0;
+  testAsync('a rejected log entry is not reported as success', async () => {
+    reset({ postStatus: 422 });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.status, 422);
+    eq(result.reason, 'rejected');
+    eq(result.detail, 'Invalid rating');
+    ok(seen.some((r) => r.method === 'POST'), 'POST was attempted');
+  });
+
+  testAsync('a Cloudflare challenge is surfaced as challenge with UA guidance', async () => {
+    reset({ postChallenge: true });
     const result = await lb.submitLog({
       slug: 'the-marvels',
       cookie: 'letterboxd.signed.in.as=test-cookie',
@@ -188,14 +276,25 @@ async function main() {
     });
     eq(result.ok, false);
     eq(result.status, 403);
-    eq(result.reason, 'rejected');
-    ok(seen.some((r) => r.method === 'POST'), 'POST was attempted');
+    eq(result.reason, 'challenge');
+    includes(result.detail, 'LB_USER_AGENT');
+    includes(result.detail, 'LB_SESSION_COOKIE');
   });
 
-  testAsync('a signed-out page is detected before the save POST', async () => {
-    mode = 'signedout';
-    postStatus = 200;
-    seen.length = 0;
+  testAsync('an invalid CSRF response is surfaced as no_csrf', async () => {
+    reset({ postCsrfFail: true });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.status, 403);
+    eq(result.reason, 'no_csrf');
+  });
+
+  testAsync('a signed-out page is detected before the film JSON or save POST', async () => {
+    reset({ mode: 'signedout' });
     const result = await lb.submitLog({
       slug: 'the-marvels',
       cookie: 'letterboxd.signed.in.as=expired',
@@ -204,12 +303,12 @@ async function main() {
     eq(result.ok, false);
     eq(result.reason, 'session_not_valid');
     ok(seen.some((r) => r.method === 'GET'), 'film GET was attempted');
+    notOk(seen.some((r) => r.url === '/film/the-marvels/json/'), 'no film JSON GET');
     notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
   });
 
   testAsync('an unreachable film page is reported as film_unreachable', async () => {
-    mode = 'missing';
-    seen.length = 0;
+    reset({ mode: 'missing' });
     const result = await lb.submitLog({
       slug: 'the-marvels',
       cookie: 'letterboxd.signed.in.as=test-cookie',
@@ -217,6 +316,68 @@ async function main() {
     });
     eq(result.ok, false);
     eq(result.reason, 'film_unreachable');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('an unreachable film JSON is reported as film_unreachable', async () => {
+    reset({ jsonMode: 'missing' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.status, 404);
+    eq(result.reason, 'film_unreachable');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('malformed film JSON is reported as film_json_invalid', async () => {
+    reset({ jsonMode: 'malformed' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.reason, 'film_json_invalid');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('film JSON without a lid is reported as no_lid', async () => {
+    reset({ jsonMode: 'nolid' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.reason, 'no_lid');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('a session with no CSRF anywhere is reported as no_csrf', async () => {
+    reset({ mode: 'signedin-nocsrf', jsonMode: 'nocsrf' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.reason, 'no_csrf');
+    notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
+  });
+
+  testAsync('a challenged film JSON request is reported as challenge', async () => {
+    reset({ jsonMode: 'challenge' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, false);
+    eq(result.status, 403);
+    eq(result.reason, 'challenge');
     notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
   });
 
@@ -241,22 +402,20 @@ async function main() {
   });
 
   testAsync('/api/session accepts a signed-in cookie', async () => {
-    mode = 'signedin';
-    seen.length = 0;
+    reset();
     const { res, body } = await getSession();
     eq(res.status, 200);
     eq(body.configured, true);
     eq(body.signedIn, true);
     eq(body.reason, 'signed_in');
     eq(body.slug, 'primer');
-    const get = seen.find((r) => r.method === 'GET');
-    eq(get.url, '/film/primer/');
-    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
+    const page = seen.find((r) => r.method === 'GET');
+    eq(page.url, '/film/primer/');
+    eq(page.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
   });
 
   testAsync('/api/session rejects an expired cookie with session_not_valid', async () => {
-    mode = 'signedout';
-    seen.length = 0;
+    reset({ mode: 'signedout' });
     const { res, body } = await getSession();
     eq(res.status, 200);
     eq(body.configured, true);
@@ -266,7 +425,7 @@ async function main() {
   });
 
   testAsync('/api/session surfaces a network failure without claiming invalid', async () => {
-    mode = 'missing';
+    reset({ mode: 'missing' });
     const { res, body } = await getSession();
     eq(res.status, 200);
     eq(body.configured, true);

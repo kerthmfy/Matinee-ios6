@@ -39,7 +39,7 @@ The web mock exists because the iOS target cannot be run on a modern Mac. It is 
 | `GET /api/search?q=...` | TMDB search; returns `tmdb_key_missing` when unconfigured |
 | `POST /api/connect` | Normalizes a handle/profile URL/RSS URL and checks the feed |
 | `GET /api/session` | Reports whether `LB_SESSION_COOKIE` is configured and whether Letterboxd still accepts it |
-| `POST /api/log` | Experimental form post using `LB_SESSION_COOKIE` |
+| `POST /api/log` | Experimental JSON log-entry write using `LB_SESSION_COOKIE` and the site's own first-party endpoint |
 | `GET /img?u=...&w=...` | Allowlisted poster proxy with a byte cache |
 
 Why a relay at all?
@@ -49,7 +49,7 @@ Why a relay at all?
 - The image proxy is an SSRF boundary: only `https://a.ltrbxd.com` and `https://image.tmdb.org`, width clamped to 80–900.
 - Feed and film responses are cached in memory and on disk, so a 50-row diary does not hammer the site.
 
-`relay/lb.js` has the parsing and the write form. `relay/images.js` is a small FIFO byte cache (300 entries / 64 MB). `relay/fixtures/` contains captured pages so the tests do not need the live site.
+`relay/lb.js` has the parsing and the write path. `relay/images.js` is a small FIFO byte cache (300 entries / 64 MB). `relay/fixtures/` contains captured pages so the tests do not need the live site.
 
 ### 1.3 The browser mock
 
@@ -114,20 +114,20 @@ The star control is a custom `UIView`. It draws five paths, clips the fill to ea
 
 | Suite | What it proves |
 | --- | --- |
-| `test/secrets.js` | Tracked-file audit for API keys, session headers, private keys, and exact values from the local `.env` |
+| `test/secrets.js` | Tracked-file audit for API keys, session headers, captured CSRF tokens, private keys, and exact values from the local `.env` |
 | `test/cookie.js` | Session-family normalization, full Cookie headers, unrelated-header rejection, masking, in-place `.env` replacement, and `0600` permissions |
 | `test/relay-api.js` | Health, static mock, manifest/service worker/icons, feed/film fixtures, connect, missing-key search, no-session log, image allowlist, CORS, 404s, traversal attempts |
 | `test/relay-search.js` | Configured search against a local HTTPS TMDB mock: query encoding, movie/TV mapping, poster proxying, empty query, upstream 500, malformed JSON |
-| `test/relay-write.js` | Signed-in form post against a local HTTPS Letterboxd mock: `person.loggedIn`, `supermodelCSRF`, cookie/uid, field body, 200, 403, signed-out session, unreachable film, route wiring; `/api/session` success/expired/network paths |
+| `test/relay-write.js` | Signed-in JSON write against a local HTTPS Letterboxd mock: page/JSON/session parsing, lid + fresh CSRF header, JSON body, `200` with `logEntry.id`, rejection, invalid CSRF, Cloudflare challenge, no-lid/no-CSRF, expired session, unreachable film, route wiring; `/api/session` success/expired/network paths |
 | `test/dom-smoke.js` | The mock renders, the logo-only nav has no text, stars are green and correctly filled, the log sheet does not re-animate, the Connect button is gone, CSV columns are right |
 | `test/dom-flows.js` | Search → draft, lists/list detail, connect, phone/iPad back labels, and manifest/touch-icon links |
 | `test/sw-cache.js` | Opaque cross-origin poster caching, cache hits, waitUntil, and pass-through for non-posters |
-| `test/write-shape.js` | The form body has the right keys, `person.loggedIn`/`supermodelCSRF` parsing, the 0–10 rating conversion, date/tags/rewatch/liked shape, and the image allowlist |
+| `test/write-shape.js` | Film JSON (`lid`, CSRF) parsing, `buildLogEntry` with 0.5–5 star ratings, tags array, review object, `diaryDetails`, `like`, origin/UA defaults, and the image allowlist |
 | `test/objc-sanity.js` | Every source exists and is in the target, imports resolve, deployment target is 6.0, ARC is on, no iOS 7+ tokens, the four icons exist |
 | `test/package.js` | Theos scaffold, plist/project settings, every icon size, screenshots, and local docs links |
 | `test/relay-live.js` | Live RSS/JSON-LD parsing and 50/50 poster fetches |
 
-The Objective-C suite is structural, not a compiler; the Theos package build is the compile check. The search and write suites use local self-signed HTTPS mocks via the test-only `MATINEE_TMDB_ORIGIN`, `MATINEE_LB_ORIGIN`, and `MATINEE_INSECURE_TLS` variables; they prove the request and mapping code, not that a real account accepts the post.
+The Objective-C suite is structural, not a compiler; the Theos package build is the compile check. The search and write suites use local self-signed HTTPS mocks via the test-only `MATINEE_TMDB_ORIGIN`, `MATINEE_LB_ORIGIN`, and `MATINEE_INSECURE_TLS` variables; they prove the request and mapping code. One live write was also verified manually against the member's own account.
 
 ### 1.6 Decisions worth knowing
 
@@ -612,25 +612,24 @@ Notes:
 
 ### 6.3 The experimental write path
 
-`relay/lb.js` has `submitLog`:
+`relay/lb.js` has `submitLog`, which uses the same first-party JSON endpoint as the site's own diary form:
 
 1. If `LB_SESSION_COOKIE` is unset, return `no_session`.
-2. Fetch the film page **with the cookie**.
-3. Parse the JSON-LD and the log form: `csrf`, `viewingableUid`, `signedIn`.
-4. If `signedIn` is false, return `session_not_valid` (the page did not set `person.loggedIn = true`).
-5. Build the same `application/x-www-form-urlencoded` body the site's own form posts:
-   - `__csrf`
-   - `viewingableUid`
-   - `specifiedDate=true`
-   - `viewingDateStr`
-   - `rating` (0–10)
-   - `rewatch`, `liked`
-   - `review`, `tags`, `containsSpoilers`
-6. POST to `https://letterboxd.com/s/save-diary-entry` with `Origin` and `Referer`.
+2. Fetch the film page **with the cookie** and require `person.loggedIn = true`; otherwise return `session_not_valid`.
+3. Fetch `https://letterboxd.com/film/<slug>/json/` with the cookie. The site's own JavaScript uses this endpoint for the production `lid` and a fresh CSRF token.
+4. Build the JSON log entry:
+   - `productionId` = `lid` (for example, `6YA` for Primer)
+   - `diaryDetails: { diaryDate, rewatch }`
+   - `rating` in stars (0.5–5)
+   - `tags` as an array
+   - `review: { text, containsSpoilers }` when the review is non-blank
+   - `like: true|false`
+5. `POST https://letterboxd.com/api/v0/production-log-entries` with `Content-Type: application/json`, `X-CSRF-TOKEN`, `Origin`, and `Referer`.
+6. Treat only a `200` response whose JSON contains `logEntry.id` as success, and return that id. A `403 Invalid CSRF token`, a normal 4xx rejection, a Cloudflare challenge (`cf-mitigated: challenge`), and an expired session are reported separately.
 
-The form's hidden `__csrf` input is a placeholder in the HTML; Letterboxd's own JavaScript replaces it with `window.supermodelCSRF` before submitting. The relay parses the last non-empty `supermodelCSRF` assignment and posts that value. It decides whether the session is signed in from `person.loggedIn = true`, not from the placeholder, because the placeholder appears in both signed-in and signed-out pages.
+Ratings are not doubled: the API expects the 0.5–5 star value directly. The legacy `/s/save-diary-entry` form is dead — it returns the site's generic 404 even when submitted exactly like the page's form. The current site JavaScript posts the JSON endpoint above.
 
-The form shape is tested against a captured film page (`relay/fixtures/film-form-excerpt.html`). The full request path is tested against a local HTTPS mock with a signed-in CSRF token (`test/relay-write.js`), including the 200, 403, and expired-session cases. A real member cookie now passes `/api/session` on the live site, but no live diary write has been attempted yet, so real-account acceptance is still unverified. Treat a live `200` as “the site accepted the post”, then check the diary.
+The page/JSON shape is tested against captured film markup (`relay/fixtures/film-form-excerpt.html`) and a local HTTPS mock (`test/relay-write.js`), including `200` + `logEntry.id`, rejection, invalid CSRF, Cloudflare challenge, no-lid/no-CSRF, expired session, and unreachable-film cases. A live write has also succeeded against the member's own account and appeared in the diary feed. Cloudflare can still challenge a later write if `cf_clearance` expires or the relay UA stops matching the browser that earned it; see the UA step below.
 
 To enable it, sign in to Letterboxd in a normal desktop browser, then hand the session cookies to the relay. Cloudflare blocks `/signin/` for non-browser clients, so the phone never attempts to log in.
 
@@ -655,6 +654,16 @@ The helper preserves the rest of `.env`, writes mode `0600`, and never prints a 
 pbpaste | npm run cookie -- --force      # save anyway after a failed check
 pbpaste | npm run cookie -- --no-verify  # skip the network check
 ```
+
+Cloudflare ties `cf_clearance` to the browser that earned it. Copy the exact `User-Agent` request header from that same DevTools request and add it to `.env`, otherwise a valid cookie can still come back as a challenge:
+
+```bash
+cat >> .env <<'EOF'
+LB_USER_AGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42'
+EOF
+```
+
+Use the UA from your own browser, not the example verbatim. Replace the line if `LB_USER_AGENT` is already present. `npm start` reads it at boot, so restart after changing it.
 
 Manual fallback, if you prefer to edit `.env` yourself:
 
@@ -681,16 +690,17 @@ The response is `{ ok, configured, signedIn, reason, slug, detail }`:
 - `configured: true`, `signedIn: true`, `reason: "signed_in"` — Letterboxd accepted the cookie.
 - `configured: true`, `signedIn: false`, `reason: "session_not_valid"` — expired or signed-out cookie.
 - `reason: "network"` — the relay could not reach Letterboxd; the cookie was not judged.
+- `reason: "challenge"` — Cloudflare challenged the relay before Letterboxd saw it; refresh the cookie and match `LB_USER_AGENT` to the browser that produced `cf_clearance`.
 
 In the app, **Profile → Test session** runs the same check. **Write configured** means the env value exists; **Write enabled** appears only after `signedIn` is true. The cookie expires eventually; when it does, repeat the capture. Do not put it in the app, a screenshot, an issue, or a commit.
 
 ### 6.4 Why there is no “rate directly” button without a cookie
 
-Letterboxd has no public write API for this. The site's own form is the only route, and it needs:
+Letterboxd has no public write API for this. The site's own JSON endpoint is the only route, and it needs:
 
 - a signed-in cookie,
 - a CSRF token tied to that session,
-- the film's `viewingableUid`.
+- the film's production `lid`.
 
 There is no safe way to do that from the phone without storing the cookie on the phone. The relay keeps it server-side, which is why the app offers **Send to Letterboxd** only as an experimental row and defaults to drafts.
 
@@ -712,6 +722,9 @@ If you want a one-tap rating inside the official app, that is a tweak (section 4
 | Posters are gray boxes | `/img` returns 403 for a non-allowlisted host; check the console and `relay/lb.js` `imageUrl` |
 | Log sheet shows a date in the wrong format | The mock uses a browser date input; the app uses `UIDatePicker` and stores ISO `yyyy-MM-dd` |
 | `Send to Letterboxd` says `no_session` | `LB_SESSION_COOKIE` is unset; run `pbpaste \| npm run cookie`, then restart the relay. CSV still works |
+| `Send to Letterboxd` says `challenge` | Cloudflare challenged the relay. Recapture the whole cookie and set `LB_USER_AGENT` to the exact UA of the browser that produced `cf_clearance`; restart |
+| `Send to Letterboxd` says `no_csrf` | The session token is stale or missing. Refresh the cookie from the browser and restart the relay |
+| `Send to Letterboxd` says `no_lid` | Film JSON did not expose the production id; confirm the slug is a real Letterboxd film and retry |
 | Profile says **Write configured** but the log fails | The env value exists but was not validated. Run **Profile → Test session** or `curl /api/session` |
 | `session_not_valid` | The cookie expired or is not signed in; refresh it from the browser with `pbpaste \| npm run cookie` |
 | `/api/session` says `network` | The relay could not reach Letterboxd. Check the Mac's network; the cookie was not judged |
