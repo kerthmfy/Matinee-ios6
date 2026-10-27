@@ -36,9 +36,17 @@ test('form excerpt is recognised as loggable', () => {
   ok(film.loggable, 'loggable');
 });
 
-test('signed-out form is detected by its placeholder CSRF', () => {
-  eq(film.csrf, 'placeholder');
+test('a page without person.loggedIn is treated as signed out', () => {
   notOk(film.signedIn, 'signedIn');
+});
+
+const signedInExcerpt = excerpt +
+  "<script>supermodelCSRF = 'test-csrf'; person.loggedIn = true;</script>";
+const signedInFilm = lb.parseFilm(signedInExcerpt, 'the-marvels');
+
+test('a signed-in page is detected from person.loggedIn', () => {
+  ok(signedInFilm.signedIn, 'signedIn');
+  eq(signedInFilm.csrf, 'test-csrf');
 });
 
 test('form field names match the ones we submit', () => {
@@ -76,8 +84,15 @@ test('rating is clamped to 0-10', () => {
   eq(body({ rating: -2 }).get('rating'), '0');
 });
 
-test('csrf token is forwarded', () => {
-  eq(body().get('__csrf'), 'placeholder');
+test('the effective CSRF token is forwarded, not the placeholder input', () => {
+  ok(film.csrf, 'csrf');
+  notOk(film.csrf === 'placeholder', 'placeholder leaked');
+  eq(body().get('__csrf'), film.csrf);
+});
+
+test('a signed-in body uses the member token', () => {
+  const signedBody = new URLSearchParams(lb.buildLogBody(signedInFilm, base));
+  eq(signedBody.get('__csrf'), 'test-csrf');
 });
 
 test('viewingId is empty for a new entry', () => {

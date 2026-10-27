@@ -17,6 +17,7 @@ const ROOT = path.join(__dirname, '..');
 const live = process.env.MATINEE_LIVE === '1' || process.argv.includes('--live');
 
 const suites = [
+  ['secret hygiene', 'test/secrets.js'],
   ['cookie capture', 'test/cookie.js'],
   ['relay HTTP API', 'test/relay-api.js'],
   ['TMDB search integration', 'test/relay-search.js'],

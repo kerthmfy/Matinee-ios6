@@ -114,14 +114,15 @@ The star control is a custom `UIView`. It draws five paths, clips the fill to ea
 
 | Suite | What it proves |
 | --- | --- |
-| `test/cookie.js` | Cookie normalization, unrelated-header rejection, masking, in-place `.env` replacement, and `0600` permissions |
+| `test/secrets.js` | Tracked-file audit for API keys, session headers, private keys, and exact values from the local `.env` |
+| `test/cookie.js` | Session-family normalization, full Cookie headers, unrelated-header rejection, masking, in-place `.env` replacement, and `0600` permissions |
 | `test/relay-api.js` | Health, static mock, manifest/service worker/icons, feed/film fixtures, connect, missing-key search, no-session log, image allowlist, CORS, 404s, traversal attempts |
 | `test/relay-search.js` | Configured search against a local HTTPS TMDB mock: query encoding, movie/TV mapping, poster proxying, empty query, upstream 500, malformed JSON |
-| `test/relay-write.js` | Signed-in form post against a local HTTPS Letterboxd mock: cookie/CSRF/uid, field body, 200, 403, expired session, unreachable film, route wiring; `/api/session` success/expired/network paths |
+| `test/relay-write.js` | Signed-in form post against a local HTTPS Letterboxd mock: `person.loggedIn`, `supermodelCSRF`, cookie/uid, field body, 200, 403, signed-out session, unreachable film, route wiring; `/api/session` success/expired/network paths |
 | `test/dom-smoke.js` | The mock renders, the logo-only nav has no text, stars are green and correctly filled, the log sheet does not re-animate, the Connect button is gone, CSV columns are right |
 | `test/dom-flows.js` | Search → draft, lists/list detail, connect, phone/iPad back labels, and manifest/touch-icon links |
 | `test/sw-cache.js` | Opaque cross-origin poster caching, cache hits, waitUntil, and pass-through for non-posters |
-| `test/write-shape.js` | The form body has the right keys, the 0–10 rating conversion, date/tags/rewatch/liked shape, and the image allowlist |
+| `test/write-shape.js` | The form body has the right keys, `person.loggedIn`/`supermodelCSRF` parsing, the 0–10 rating conversion, date/tags/rewatch/liked shape, and the image allowlist |
 | `test/objc-sanity.js` | Every source exists and is in the target, imports resolve, deployment target is 6.0, ARC is on, no iOS 7+ tokens, the four icons exist |
 | `test/package.js` | Theos scaffold, plist/project settings, every icon size, screenshots, and local docs links |
 | `test/relay-live.js` | Live RSS/JSON-LD parsing and 50/50 poster fetches |
@@ -616,7 +617,7 @@ Notes:
 1. If `LB_SESSION_COOKIE` is unset, return `no_session`.
 2. Fetch the film page **with the cookie**.
 3. Parse the JSON-LD and the log form: `csrf`, `viewingableUid`, `signedIn`.
-4. If `signedIn` is false, return `session_not_valid` (Letterboxd rendered a placeholder token).
+4. If `signedIn` is false, return `session_not_valid` (the page did not set `person.loggedIn = true`).
 5. Build the same `application/x-www-form-urlencoded` body the site's own form posts:
    - `__csrf`
    - `viewingableUid`
@@ -627,26 +628,28 @@ Notes:
    - `review`, `tags`, `containsSpoilers`
 6. POST to `https://letterboxd.com/s/save-diary-entry` with `Origin` and `Referer`.
 
-The form shape is tested against a captured film page (`relay/fixtures/film-form-excerpt.html`). The full request path is tested against a local HTTPS mock with a signed-in CSRF token (`test/relay-write.js`), including the 200, 403, and expired-session cases. A real member cookie was not available, so real-account acceptance is still unverified. Treat a live `200` as “the site accepted the post”, then check the diary.
+The form's hidden `__csrf` input is a placeholder in the HTML; Letterboxd's own JavaScript replaces it with `window.supermodelCSRF` before submitting. The relay parses the last non-empty `supermodelCSRF` assignment and posts that value. It decides whether the session is signed in from `person.loggedIn = true`, not from the placeholder, because the placeholder appears in both signed-in and signed-out pages.
 
-To enable it, sign in to Letterboxd in a normal desktop browser, then hand the session cookie to the relay. Cloudflare blocks `/signin/` for non-browser clients, so the phone never attempts to log in.
+The form shape is tested against a captured film page (`relay/fixtures/film-form-excerpt.html`). The full request path is tested against a local HTTPS mock with a signed-in CSRF token (`test/relay-write.js`), including the 200, 403, and expired-session cases. A real member cookie now passes `/api/session` on the live site, but no live diary write has been attempted yet, so real-account acceptance is still unverified. Treat a live `200` as “the site accepted the post”, then check the diary.
 
-1. In DevTools → Application/Storage → Cookies → `https://letterboxd.com`, copy the **value** of `letterboxd.signed.in` (or copy the whole `Cookie:` header).
+To enable it, sign in to Letterboxd in a normal desktop browser, then hand the session cookies to the relay. Cloudflare blocks `/signin/` for non-browser clients, so the phone never attempts to log in.
+
+1. In DevTools → **Network**, reload `https://letterboxd.com`, click the first document request, then **Headers → Request Headers → Cookie**. Copy the **whole** header value. Letterboxd's session spans `letterboxd.signed.in.as` and `letterboxd.user.CURRENT`, so one value alone is usually not enough.
 2. On the Mac running the relay:
 
    ```bash
    pbpaste | npm run cookie
    ```
 
-`npm run cookie` runs `relay/cookie.js`. It reads the value from stdin, never from argv, so it does not land in shell history or `ps`. Before saving, it fetches a public film page (`/film/primer/`) and checks for a real CSRF token. A signed-out or expired cookie is rejected, and a working `.env` is left untouched.
+`npm run cookie` runs `relay/cookie.js`. It reads the value from stdin, never from argv, so it does not land in shell history or `ps`. Before saving, it fetches a public film page (`/film/primer/`) and checks whether Letterboxd marks the request as signed in (`person.loggedIn = true`). A signed-out or expired cookie is rejected, and a working `.env` is left untouched.
 
 ```
-Saved letterboxd.signed.in=…(NNN chars) to /path/to/.env.
+Saved letterboxd.signed.in.as=…(11 chars) + other cookies to /path/to/.env.
 Letterboxd accepted the cookie; the relay can now post diary entries.
 Restart the relay (Ctrl-C, then `npm start`) to load it.
 ```
 
-The helper preserves the rest of `.env`, writes mode `0600`, and never prints the value. If you need to override validation:
+The helper preserves the rest of `.env`, writes mode `0600`, and never prints a value. If you need to override validation:
 
 ```bash
 pbpaste | npm run cookie -- --force      # save anyway after a failed check
@@ -658,7 +661,7 @@ Manual fallback, if you prefer to edit `.env` yourself:
 ```bash
 umask 077
 cat >> .env <<'EOF'
-LB_SESSION_COOKIE='letterboxd.signed.in=<paste-the-value-here>'
+LB_SESSION_COOKIE='letterboxd.signed.in.as=<paste-value>; letterboxd.user.CURRENT=<paste-value>'
 EOF
 
 npm start

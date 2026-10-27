@@ -21,7 +21,8 @@ const excerpt = fs.readFileSync(
   path.join(__dirname, '..', 'relay', 'fixtures', 'film-form-excerpt.html'),
   'utf8'
 );
-const signedInHtml = excerpt.replace('value="placeholder"', 'value="test-csrf"');
+const signedInHtml = excerpt +
+  "<script>supermodelCSRF = 'test-csrf'; person.loggedIn = true;</script>";
 
 async function main() {
   let mode = 'signedin';
@@ -65,7 +66,7 @@ async function main() {
 
   process.env.MATINEE_LB_ORIGIN = letterboxd.origin;
   process.env.MATINEE_INSECURE_TLS = '1';
-  process.env.LB_SESSION_COOKIE = 'letterboxd.signed.in=test-cookie';
+  process.env.LB_SESSION_COOKIE = 'letterboxd.signed.in.as=test-cookie';
   process.env.MATINEE_OFFLINE = '1';
   delete process.env.TMDB_API_KEY;
   delete process.env.MATINEE_TMDB_ORIGIN;
@@ -108,7 +109,7 @@ async function main() {
     seen.length = 0;
     const result = await lb.submitLog({
       slug: 'the-marvels',
-      cookie: 'letterboxd.signed.in=test-cookie',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
       rating: 4,
       watchedDate: '2026-10-24',
       review: 'line one & "quotes"',
@@ -126,12 +127,12 @@ async function main() {
     const get = seen.find((r) => r.method === 'GET');
     ok(get, 'film GET');
     eq(get.url, '/film/the-marvels/');
-    eq(get.headers.cookie, 'letterboxd.signed.in=test-cookie');
+    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
 
     const post = seen.find((r) => r.method === 'POST');
     ok(post, 'save POST');
     eq(post.url, '/s/save-diary-entry');
-    eq(post.headers.cookie, 'letterboxd.signed.in=test-cookie');
+    eq(post.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
     eq(post.headers.origin, 'https://letterboxd.com');
     eq(post.headers.referer, letterboxd.origin + '/film/the-marvels/');
     includes(post.headers['content-type'], 'application/x-www-form-urlencoded');
@@ -167,7 +168,7 @@ async function main() {
     eq(body.reason, 'submitted');
     const get = seen.find((r) => r.method === 'GET');
     const post = seen.find((r) => r.method === 'POST');
-    eq(get.headers.cookie, 'letterboxd.signed.in=test-cookie');
+    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
     const form = new URLSearchParams(post.body);
     eq(form.get('rating'), '10');
     eq(form.get('viewingDateStr'), '2026-10-25');
@@ -182,7 +183,7 @@ async function main() {
     seen.length = 0;
     const result = await lb.submitLog({
       slug: 'the-marvels',
-      cookie: 'letterboxd.signed.in=test-cookie',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
       rating: 3,
     });
     eq(result.ok, false);
@@ -191,13 +192,13 @@ async function main() {
     ok(seen.some((r) => r.method === 'POST'), 'POST was attempted');
   });
 
-  testAsync('a placeholder CSRF is detected before the save POST', async () => {
+  testAsync('a signed-out page is detected before the save POST', async () => {
     mode = 'signedout';
     postStatus = 200;
     seen.length = 0;
     const result = await lb.submitLog({
       slug: 'the-marvels',
-      cookie: 'letterboxd.signed.in=expired',
+      cookie: 'letterboxd.signed.in.as=expired',
       rating: 3,
     });
     eq(result.ok, false);
@@ -211,7 +212,7 @@ async function main() {
     seen.length = 0;
     const result = await lb.submitLog({
       slug: 'the-marvels',
-      cookie: 'letterboxd.signed.in=test-cookie',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
       rating: 3,
     });
     eq(result.ok, false);
@@ -250,7 +251,7 @@ async function main() {
     eq(body.slug, 'primer');
     const get = seen.find((r) => r.method === 'GET');
     eq(get.url, '/film/primer/');
-    eq(get.headers.cookie, 'letterboxd.signed.in=test-cookie');
+    eq(get.headers.cookie, 'letterboxd.signed.in.as=test-cookie');
   });
 
   testAsync('/api/session rejects an expired cookie with session_not_valid', async () => {

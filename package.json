@@ -8,6 +8,7 @@
     "cookie": "node relay/cookie.js",
     "fixtures": "node relay/fixtures/build.js",
     "test": "node test/run-all.js",
+    "test:secrets": "node test/secrets.js",
     "test:cookie": "node test/cookie.js",
     "test:api": "node test/relay-api.js",
     "test:search": "node test/relay-search.js",

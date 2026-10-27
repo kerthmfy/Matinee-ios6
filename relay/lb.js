@@ -408,8 +408,30 @@ function parseFilm(html, slug) {
     /(?:data\.viewingable\.uid\s*=\s*|"uid"\s*:\s*)"([^"]+)"/.exec(html) ||
     [])[1] || null;
 
-  const csrfMatch = /name="__csrf"\s+value="([^"]*)"/i.exec(html);
-  const csrf = csrfMatch ? csrfMatch[1] : null;
+  const csrfInputMatch = /<input\b[^>]*\bname="__csrf"[^>]*\bvalue="([^"]*)"/i.exec(html) ||
+    /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bname="__csrf"/i.exec(html);
+  const csrfInput = csrfInputMatch ? csrfInputMatch[1] : null;
+
+  // Letterboxd renders a placeholder hidden input and replaces it on submit
+  // with window.supermodelCSRF. The assignment appears more than once; the
+  // last non-empty value is the member token.
+  const csrfScriptValues = [...html.matchAll(/supermodelCSRF\s*=\s*(['"])([^'"]*)\1/g)]
+    .map((m) => m[2])
+    .filter(Boolean);
+  const csrfScript = csrfScriptValues.length
+    ? csrfScriptValues[csrfScriptValues.length - 1]
+    : null;
+  const csrf = csrfScript && csrfScript !== 'placeholder'
+    ? csrfScript
+    : csrfInput && csrfInput !== 'placeholder' ? csrfInput : null;
+
+  // Signed-in pages set person.loggedIn = true. The hidden __csrf input is a
+  // placeholder on both signed-in and signed-out pages, so it cannot be used
+  // as the login signal. Fall back to a real hidden token for older markup.
+  const loggedInMatch = /person\.loggedIn\s*=\s*(true|false)/.exec(html);
+  const loggedIn = loggedInMatch ? loggedInMatch[1] === 'true' : null;
+  const signedIn = loggedIn === true ||
+    (loggedIn === null && Boolean(csrfInput && csrfInput !== 'placeholder'));
 
   const dateCreated = ld && ld.dateCreated ? String(ld.dateCreated) : null;
 
@@ -432,7 +454,7 @@ function parseFilm(html, slug) {
     uid,
     csrf,
     loggable: Boolean(uid) && Boolean(csrf),
-    signedIn: Boolean(csrf) && csrf !== 'placeholder',
+    signedIn,
     canonical: canEnd || FILM_URL(slug),
     parsed: Boolean(ld),
   };
@@ -536,8 +558,8 @@ function buildLogBody(film, opts) {
 
 /**
  * Check whether a cookie is still signed in without posting anything. The
- * film page is public; a real session gets a real CSRF token, while a
- * signed-out session gets Letterboxd's placeholder token.
+ * film page is public. A signed-in page sets person.loggedIn = true and
+ * carries the member's supermodelCSRF token; a signed-out page does neither.
  */
 async function checkSession(cookie, slug) {
   if (!cookie) return { ok: false, reason: 'no_session' };
@@ -592,8 +614,15 @@ async function submitLog(opts) {
       ok: false,
       reason: 'session_not_valid',
       detail:
-        'Letterboxd rendered a placeholder CSRF token, so that cookie is not ' +
-        'signed in (or has expired).',
+        'Letterboxd did not mark this session as signed in. The cookie is ' +
+        'missing, expired, or from a signed-out browser.',
+    };
+  }
+  if (!film.csrf) {
+    return {
+      ok: false,
+      reason: 'no_csrf',
+      detail: 'The film page did not expose a CSRF token to submit with.',
     };
   }
 

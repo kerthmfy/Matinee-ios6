@@ -23,7 +23,7 @@ The phone never holds a Letterboxd password. It talks to the relay; the relay ta
 | Browser mock: diary, film, log sheet, lists, search, profile, CSV | Working; 29/29 DOM tests |
 | Installable mock: manifest, service worker, poster cache | Working; 4/4 service-worker tests |
 | UIKit target: 4 tabs, diary, film, log, lists, search, profile | Compiled with Theos (armv7, min iOS 6.0) and packaged; **device run pending** |
-| Direct log to Letterboxd | Form and transport tested against a local signed-in mock; `npm run cookie` captures a browser session, a real cookie is still unverified |
+| Direct log to Letterboxd | Form and transport tested against a local signed-in mock; `npm run cookie` captures a browser session, and `/api/session` validates it against the live site (no live diary write attempted yet) |
 | CSV → official Letterboxd import | Supported path |
 
 The browser mock is the visual reference. The Objective-C target is the same design translated to UIKit. It now compiles and packages with Theos against the armv7 slice of the 11.4 SDK, with a 6.0 deployment target; the `.deb` is in `packaging/theos/packages/`. It has not been launched on a physical iOS 6 device yet, so treat that as the next test. `docs/GUIDE.md` explains the exact toolchain.
@@ -71,16 +71,17 @@ npm start
 
 ### Capture a Letterboxd session
 
-Letterboxd's sign-in page is behind Cloudflare, so the phone cannot log in. Sign in with a normal desktop browser first, then copy the session cookie into the relay:
+Letterboxd's sign-in page is behind Cloudflare, so the phone cannot log in. Sign in with a normal desktop browser first, then copy the **whole Cookie request header** into the relay. Letterboxd's session spans several cookies (`letterboxd.signed.in.as`, `letterboxd.user.CURRENT`), so the full header is more reliable than a single value.
 
-1. In DevTools → Application/Storage → Cookies → `https://letterboxd.com`, copy the **value** of `letterboxd.signed.in`.
+1. In DevTools → **Network**, reload `https://letterboxd.com`, click the first document request, then **Headers → Request Headers → Cookie**. Copy the entire header value.
+   - Alternative: Application/Storage → Cookies → `https://letterboxd.com`, then build `letterboxd.signed.in.as=<value>; letterboxd.user.CURRENT=<value>` by hand.
 2. On the Mac running the relay:
 
    ```bash
    pbpaste | npm run cookie
    ```
 
-The helper reads stdin (never argv), validates the cookie against `letterboxd.com/film/primer/`, writes `.env` with mode `0600`, and never prints the value. It refuses to replace a working cookie if validation fails. Options:
+The helper reads stdin (never argv), validates the session against `letterboxd.com/film/primer/` by checking `person.loggedIn`, writes `.env` with mode `0600`, and never prints the value. It refuses to replace a working cookie if validation fails. Options:
 
 ```bash
 pbpaste | npm run cookie -- --force      # save even if validation fails
@@ -185,7 +186,7 @@ There are two paths, and they are deliberately different:
 
    This needs no cookie, survives 2FA, and is the only path that has been verified end to end.
 
-2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same form Letterboxd's own page posts, using the film page's CSRF token and `viewingableUid`. Capture the cookie with `pbpaste | npm run cookie`, restart the relay, and use **Profile → Test session** to confirm it. The form shape, signed-in detection, cookie forwarding, success, rejection, expired-session, and `/api/session` paths are tested against a local HTTPS mock. A real member cookie was not available, so real-account acceptance is still unverified. It is off by default and returns `no_session` until configured.
+2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same form Letterboxd's own page posts, using the film page's CSRF token and `viewingableUid`. Capture the cookie with `pbpaste | npm run cookie`, restart the relay, and use **Profile → Test session** to confirm it. The form shape, signed-in detection, cookie forwarding, success, rejection, expired-session, and `/api/session` paths are tested against a local HTTPS mock. A real member cookie now passes `/api/session`, but no live diary write has been attempted yet, so real-account acceptance is still unverified. It is off by default and returns `no_session` until configured.
 
 Why not log in on the phone? It would mean handling a password, 2FA, cookie expiry, and CSRF on the device, and it would still be an unofficial write path. The relay keeps that blast radius on a machine you control, and the CSV path keeps the app useful without it.
 
@@ -203,24 +204,25 @@ Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB
 ## Tests
 
 ```text
-ok   cookie:           9/9 passed
+ok   secrets:          4/4 passed
+ok   cookie:          11/11 passed
 ok   relay-api:       20/20 passed
 ok   relay-search:     7/7 passed
 ok   relay-write:     12/12 passed
 ok   dom-smoke:       15/15 passed
 ok   dom-flows:       14/14 passed
 ok   sw-cache:         4/4 passed
-ok   write-path:      31/31 passed
+ok   write-path:      33/33 passed
 ok   objc-sanity:     26/26 passed
 ok   package:         15/15 passed
 ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
 ```
 
-The offline total is **153 assertions across 10 suites**; with `--live` it is **170 assertions across 11 suites**. Search and direct write are exercised
+The offline total is **161 assertions across 11 suites**; with `--live` it is **178 assertions across 12 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
-real Letterboxd session cookie is still needed to prove the upstream account
-accepts a post.
+real Letterboxd cookie now validates against the live site, but a live diary
+write is still the final proof.
 
 `objc-sanity` is structural, not a compiler; the Theos package build is the compile check. It checks that every source exists, every quoted import resolves, every `.m` is in the Sources phase, the deployment target and ARC settings are present, the four icon slots exist, and no iOS 7+ API token appears in the target.
 

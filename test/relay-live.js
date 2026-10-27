@@ -110,7 +110,7 @@ async function main() {
   });
 
   test('signed-out sessions are detected', () => {
-    eq(film.csrf, 'placeholder');
+    ok(film.csrf, 'visitor CSRF token');
     eq(film.signedIn, false);
   });
 
