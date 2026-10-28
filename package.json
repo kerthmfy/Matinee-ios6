@@ -2,7 +2,7 @@
   "name": "matinee",
   "version": "1.0.0",
   "private": true,
-  "description": "An iOS 6 Letterboxd client: relay, browser mock, and UIKit app.",
+  "description": "An iOS 6 Letterboxd client: relay, and UIKit app.",
   "scripts": {
     "start": "node relay/start.js",
     "cookie": "node relay/cookie.js",
