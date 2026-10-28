@@ -1,12 +1,7 @@
 # Matinee
 
-An iOS 6 Letterboxd client, built three ways:
+An iOS 6 Letterboxd client
 
-- a **hand-written UIKit app** for iOS 6.1 / armv7 (Objective-C, ARC, no storyboards),
-- a **browser mock** that renders the same screens in an iPhone 4S and iPad 2 frame, and
-- a **small Node relay** that owns every request to Letterboxd and TMDB.
-
-The phone never holds a Letterboxd password. It talks to the relay; the relay talks to the world.
 
 <p align="center">
   <img src="docs/screenshots/diary.png" width="220" alt="Diary, with the orb mark as the only navigation title">
