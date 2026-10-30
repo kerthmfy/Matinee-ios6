@@ -1,3 +1,5 @@
 # Keep the language bar focused on the app and the relay.
 # The test suite is real code, but it is not what this project is "written in".
 test/** linguist-vendored
+# Captured letterboxd.com pages and API snapshots: upstream content, not repo code.
+relay/fixtures/** linguist-vendored
