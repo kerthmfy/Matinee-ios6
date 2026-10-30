@@ -84,67 +84,29 @@ async function main() {
     ok(body.images && typeof body.images.entries === 'number', 'image stats');
   });
 
-  testAsync('the browser mock is served from / with no-store', async () => {
-    const res = await get('/');
-    const html = await res.text();
+  testAsync('the relay root returns a JSON endpoint index', async () => {
+    const { res, body } = await getJson('/');
     eq(res.status, 200);
-    eq(res.headers.get('content-type'), 'text/html; charset=utf-8');
+    eq(res.headers.get('content-type'), 'application/json; charset=utf-8');
     eq(res.headers.get('cache-control'), 'no-store');
-    includes(html, 'id="phone"');
-    includes(html, 'id="ipad"');
-    includes(html, 'rel="manifest"');
-    includes(html, 'apple-touch-icon');
+    eq(body.ok, true);
+    eq(body.service, 'matinee-relay');
+    ok(Array.isArray(body.endpoints), 'endpoints');
+    includes(body.endpoints.join(','), '/api/health');
   });
 
-  testAsync('the installable manifest links two valid PNG icons', async () => {
-    const { res, body } = await getJson('/manifest.webmanifest');
-    eq(res.status, 200);
-    eq(res.headers.get('content-type'), 'application/manifest+json');
-    eq(body.name, 'Matinee');
-    eq(body.short_name, 'Matinee');
-    eq(body.display, 'standalone');
-    eq(body.start_url, './');
-    eq(body.icons.length, 2);
-    for (const icon of body.icons) {
-      const img = await get('/' + icon.src);
-      eq(img.status, 200);
-      eq(img.headers.get('content-type'), 'image/png');
-      const bytes = Buffer.from(await img.arrayBuffer());
-      eq(bytes.slice(0, 8).toString('hex'), '89504e470d0a1a0a');
-      ok(bytes.length > 1000, icon.src + ' has bytes');
-    }
-  });
-
-  testAsync('the service worker and app assets are served with exact MIME types', async () => {
-    const sw = await get('/sw.js');
-    eq(sw.status, 200);
-    eq(sw.headers.get('content-type'), 'application/javascript; charset=utf-8');
-    includes(await sw.text(), "matinee-posters-v1");
-
-    const js = await get('/app.js');
-    eq(js.status, 200);
-    includes(await js.text(), 'function render()');
-
-    const css = await get('/style.css');
-    eq(css.status, 200);
-    eq(css.headers.get('content-type'), 'text/css; charset=utf-8');
-
-    const ico = await get('/icon-57.png');
-    eq(ico.status, 200);
-    eq(ico.headers.get('content-type'), 'image/png');
-  });
-
-  testAsync('unknown static files and API routes are distinct 404s', async () => {
-    const staticRes = await get('/not-a-real-file.css');
-    eq(staticRes.status, 404);
-    eq(staticRes.headers.get('content-type'), 'text/plain; charset=utf-8');
+  testAsync('unknown files and API routes return JSON 404s', async () => {
+    const file = await getJson('/not-a-real-file.css');
+    eq(file.res.status, 404);
+    eq(file.res.headers.get('content-type'), 'application/json; charset=utf-8');
+    eq(file.body.reason, 'not_found');
 
     const { res, body } = await getJson('/api/not-a-real-route');
     eq(res.status, 404);
     eq(body.reason, 'no_such_endpoint');
   });
 
-  testAsync('path traversal cannot escape the web root', async () => {
+  testAsync('path traversal cannot leak relay source', async () => {
     for (const candidate of [
       '/../relay/server.js',
       '/%2e%2e/relay/server.js',

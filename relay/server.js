@@ -4,7 +4,6 @@
  * Matinee relay.
  *
  * One process, no runtime dependencies:
- *   - serves the iOS 6 browser mock from ../web
  *   - serves small JSON to the phone
  *   - owns every upstream request to Letterboxd and TMDB
  *
@@ -25,7 +24,6 @@ const images = require('./images');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const MEMBER = process.env.MATINEE_MEMBER || 'kerthfyadao';
 const TMDB_KEY = process.env.TMDB_API_KEY || '';
-const WEB_ROOT = path.join(__dirname, '..', 'web');
 const CACHE_DIR = path.join(__dirname, '.cache');
 const FIXTURE_DIR = path.join(__dirname, 'fixtures');
 
@@ -328,40 +326,6 @@ async function readJsonBody(req) {
   }
 }
 
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.ico': 'image/x-icon',
-  '.webmanifest': 'application/manifest+json',
-};
-
-function serveStatic(req, res, pathname) {
-  const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
-  const file = path.join(WEB_ROOT, rel);
-  if (!file.startsWith(WEB_ROOT)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain' });
-    return res.end('forbidden');
-  }
-  fs.stat(file, (err, stat) => {
-    if (err || !stat.isFile()) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      return res.end('not found');
-    }
-    const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    res.writeHead(200, {
-      'Content-Type': type,
-      'Content-Length': stat.size,
-      'Cache-Control': 'no-store',
-    });
-    fs.createReadStream(file).pipe(res);
-  });
-}
-
 /* ------------------------------------------------------------------ */
 /* routes                                                              */
 /* ------------------------------------------------------------------ */
@@ -377,6 +341,24 @@ async function route(req, res) {
       'Access-Control-Allow-Headers': 'Content-Type',
     });
     return res.end();
+  }
+
+  if (pathname === '/') {
+    return sendJson(res, 200, {
+      ok: true,
+      service: 'matinee-relay',
+      version: '1.0.0',
+      endpoints: [
+        '/api/health',
+        '/api/session',
+        '/api/feed',
+        '/api/film',
+        '/api/search',
+        '/api/connect',
+        '/api/log',
+        '/img',
+      ],
+    });
   }
 
   if (pathname === '/api/health') {
@@ -568,7 +550,7 @@ async function route(req, res) {
     return sendJson(res, 404, { ok: false, reason: 'no_such_endpoint' });
   }
 
-  return serveStatic(req, res, pathname);
+  return sendJson(res, 404, { ok: false, reason: 'not_found' });
 }
 
 /* ------------------------------------------------------------------ */

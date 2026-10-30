@@ -160,39 +160,13 @@ const ICONS = [
   ['Matinee/Matinee/Resources/Icon-72.png', 72],
   ['Matinee/Matinee/Resources/Icon-72@2x.png', 144],
   ['Matinee/Matinee/Resources/iTunesArtwork.png', 512],
-  ['web/icon-57.png', 57],
-  ['web/icon-72.png', 72],
-  ['web/icon-114.png', 114],
-  ['web/icon-144.png', 144],
-  ['web/icon-180.png', 180],
-  ['web/icon-192.png', 192],
-  ['web/icon-512.png', 512],
 ];
 
-test('every app and web icon is a square PNG at the declared size', () => {
+test('every app icon is a square PNG at the declared size', () => {
   for (const [rel, size] of ICONS) {
     const dim = pngSize(rel);
     eq(dim, { width: size, height: size }, rel);
   }
-});
-
-test('the web manifest icons exist and match their declared sizes', () => {
-  const manifest = JSON.parse(read('web/manifest.webmanifest'));
-  eq(manifest.display, 'standalone');
-  eq(manifest.start_url, './');
-  for (const icon of manifest.icons) {
-    const rel = 'web/' + icon.src;
-    ok(exists(rel), icon.src);
-    const [w, h] = icon.sizes.split('x').map(Number);
-    eq(pngSize(rel), { width: w, height: h }, icon.src);
-  }
-  ok(exists('web/icon.svg'), 'favicon');
-  ok(exists('web/sw.js'), 'service worker');
-  const sw = read('web/sw.js');
-  includes(sw, "const CACHE = 'matinee-posters-v1'");
-  includes(sw, "res.type === 'opaque'");
-  includes(sw, '.put(event.request, res.clone())');
-  includes(sw, 'event.waitUntil(write)');
 });
 
 test('the four README screenshots are the expected 640x960 frames', () => {

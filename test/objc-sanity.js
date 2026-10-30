@@ -294,7 +294,7 @@ test('rating is sent 0-5 from the phone and kept in stars by the relay', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* UI details already verified in the browser mock                    */
+/* UI details already verified on the physical device                  */
 /* ------------------------------------------------------------------ */
 
 test('stars are green and clipped per star', () => {

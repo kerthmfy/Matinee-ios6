@@ -25,7 +25,7 @@ The target is **iOS 6.1**, which means:
 - `NSURLConnection`, `UIAlertView`, `UINavigationBar` background images,
 - text measurement with `sizeWithFont:constrainedToSize:lineBreakMode:`.
 
-The web mock exists because the iOS target cannot be run on a modern Mac. It is the visual and interaction reference: every screen, spacing decision, and state transition is testable in jsdom. The UIKit target mirrors that behavior.
+The UIKit target is the interface. It uses custom-drawn chrome and hand-built table layouts, with no storyboards or Auto Layout, and is tested on a physical iPhone 4S running iOS 6.1.3. The screenshots in `docs/screenshots/` are device captures.
 
 ### 1.2 The relay
 
@@ -33,7 +33,7 @@ The web mock exists because the iOS target cannot be run on a modern Mac. It is 
 
 | Route | What it does |
 | --- | --- |
-| `GET /` and static paths | Serves the browser mock from `web/` |
+| `GET /` | Returns a JSON endpoint index; there is no browser demo in this tree |
 | `GET /api/feed?user=handle` | Fetches and parses the public RSS feed; returns diary entries and lists |
 | `GET /api/film?slug=...` | Fetches a film page, parses JSON-LD, runtime, cast, synopsis, CSRF, and `viewingableUid` |
 | `GET /api/search?q=...` | TMDB search; returns `tmdb_key_missing` when unconfigured |
@@ -51,36 +51,9 @@ Why a relay at all?
 
 `relay/lb.js` has the parsing and the write path. `relay/images.js` is a small FIFO byte cache (300 entries / 64 MB). `relay/fixtures/` contains captured pages so the tests do not need the live site.
 
-### 1.3 The browser mock
+### 1.3 The UIKit target
 
-`web/app.js` is a tiny state machine:
-
-```
-state = { tab, view, feed, film, sheet, alert, drafts, ... }
-render() -> phone + iPad
-```
-
-Every interaction mutates state, then calls `render()`. The phone and iPad are two render targets of the same state, which is why a change on one is visible on the other.
-
-The iOS 6 look is hand-built CSS:
-
-- a 44px navigation bar with a top highlight, blue gradient, and 1px dark bottom edge,
-- a 49px tab bar with a glass highlight and selected-tab gradient,
-- grouped tables with inset cards and 1px separators,
-- a status bar with time, 3G, and battery,
-- the three-orb mark drawn with CSS gradients.
-
-The log sheet is an overlay inside the phone frame, not a route. That made it possible to test the exact bug the user reported: it used to re-animate on every star tap. The fix is one class:
-
-```js
-class: 'sheet' + (s.animated ? '' : ' sheet-enter')
-```
-
-`animated` is set after the first mount. A star tap calls `paintLogStars()` and updates the caption; it never calls `render()`, so the sheet node, its scroll position, and its animation stay put.
-
-### 1.4 The UIKit target
-
-The app is split the same way as the mock:
+The app is split into focused controllers:
 
 | File | Role |
 | --- | --- |
@@ -90,7 +63,7 @@ The app is split the same way as the mock:
 | `MTLogViewController` | Header, tappable stars, date picker, review, switches, Save/Send |
 | `MTListsViewController` | Lists and list detail |
 | `MTSearchViewController` | Search bar, TMDB results, log sheet |
-| `MTProfileViewController` | Handle, drafts, CSV export, relay URL, status |
+| `MTProfileViewController` | Relay session, handle, drafts, CSV export, relay URL, status |
 | `MTModels` | `MTEntry`, `MTFilm`, `MTDraft`, CSV row |
 | `MTRelay` | The only network client; talks to the relay |
 | `MTStore` | `NSUserDefaults`: relay base, handle, drafts |
@@ -110,18 +83,15 @@ The log sheet is the most delicate screen. It uses a grouped table:
 
 The star control is a custom `UIView`. It draws five paths, clips the fill to each star's width, and calls a block on tap. It never reloads the table, so the date picker and text view keep their state.
 
-### 1.5 The tests
+### 1.4 The tests
 
 | Suite | What it proves |
 | --- | --- |
 | `test/secrets.js` | Tracked-file audit for API keys, session headers, captured CSRF tokens, private keys, and exact values from the local `.env` |
 | `test/cookie.js` | Session-family normalization, full Cookie headers, unrelated-header rejection, masking, in-place `.env` replacement, and `0600` permissions |
-| `test/relay-api.js` | Health, static mock, manifest/service worker/icons, feed/film fixtures, connect, missing-key search, no-session log, image allowlist, CORS, 404s, traversal attempts |
+| `test/relay-api.js` | Health, JSON endpoint index, feed/film fixtures, connect, missing-key search, no-session log, image allowlist, CORS, 404s, traversal attempts |
 | `test/relay-search.js` | Configured search against a local HTTPS TMDB mock: query encoding, movie/TV mapping, poster proxying, empty query, upstream 500, malformed JSON |
 | `test/relay-write.js` | Signed-in JSON write against a local HTTPS Letterboxd mock: page/JSON/session parsing, lid + fresh CSRF header, JSON body, `200` with `logEntry.id`, rejection, invalid CSRF, Cloudflare challenge, no-lid/no-CSRF, expired session, unreachable film, route wiring; `/api/session` success/expired/network paths |
-| `test/dom-smoke.js` | The mock renders, the logo-only nav has no text, stars are green and correctly filled, the log sheet does not re-animate, the Connect button is gone, CSV columns are right |
-| `test/dom-flows.js` | Search → draft, lists/list detail, connect, phone/iPad back labels, and manifest/touch-icon links |
-| `test/sw-cache.js` | Opaque cross-origin poster caching, cache hits, waitUntil, and pass-through for non-posters |
 | `test/write-shape.js` | Film JSON (`lid`, CSRF) parsing, `buildLogEntry` with 0.5–5 star ratings, tags array, review object, `diaryDetails`, `like`, origin/UA defaults, and the image allowlist |
 | `test/objc-sanity.js` | Every source exists and is in the target, imports resolve, deployment target is 6.0, ARC is on, no iOS 7+ tokens, the four icons exist |
 | `test/package.js` | Theos scaffold, plist/project settings, every icon size, screenshots, and local docs links |
@@ -129,15 +99,15 @@ The star control is a custom `UIView`. It draws five paths, clips the fill to ea
 
 The Objective-C suite is structural, not a compiler; the Theos package build is the compile check. The search and write suites use local self-signed HTTPS mocks via the test-only `MATINEE_TMDB_ORIGIN`, `MATINEE_LB_ORIGIN`, and `MATINEE_INSECURE_TLS` variables; they prove the request and mapping code. One live write was also verified manually against the member's own account.
 
-### 1.6 Decisions worth knowing
+### 1.5 Decisions worth knowing
 
 - **Diary nav is the mark only.** A text title next to the orbs made the bar feel like a template. The orbs are the brand.
 - **The back control is shaped.** The old `‹ Diary` was a text glyph in a plain button. It is now an iOS 6 pointed cap with a 1px outline, gradient, and drop shadow. The nav title caps at 46% when a back button is present so the two cannot overlap.
-- **No Connect button in Profile's nav.** The connect action lives in the Account section; a second button in the bar was redundant.
+- **Profile leads with the relay session.** The cookie never reaches the phone; the first row reports relay-owned session state, and capture instructions live behind **Refresh cookie**.
 - **Stars clip per star.** The gap between stars is not part of any star's fill width. This is why a 4.5 rating fills four stars and half of the fifth, not four stars plus the gap.
-- **The sheet animates once.** See above.
+- **The sheet animates once.** It animates on mount and keeps its scroll position; a star tap repaints it in place.
 - **Poster placeholders are light.** `#e7e9ed` reads as paper. Dark gradient placeholders looked like missing content.
-- **The icon is square.** iOS applies the mask. The source is `web/icon.svg`; the PNGs are generated at 57/72/114/144/180/192/512.
+- **The icon is square.** iOS applies the mask. The four icon sizes live in `Matinee/Matinee/Resources/`.
 
 ---
 
@@ -166,7 +136,7 @@ Comments and docs mention the variable names; that is fine. A value is not. Unst
 ```bash
 git init -b main
 git add .
-git commit -m "Matinee: iOS 6 Letterboxd client, relay, and browser mock"
+git commit -m "Matinee: iOS 6 Letterboxd client and relay"
 ```
 
 If your Git is older than 2.28, use `git init` then `git branch -M main`.
@@ -197,7 +167,7 @@ git push -u origin main
 ### 2.4 Make the repo legible
 
 - Replace `YOURNAME` in the clone command in `README.md`.
-- Add a short description on GitHub: “An iOS 6 Letterboxd client: relay, browser mock, and UIKit app.”
+- Add a short description on GitHub: “An iOS 6 Letterboxd client: relay and UIKit app.”
 - Add topics: `ios6`, `objective-c`, `letterboxd`, `uikit`, `nodejs`, `retro`.
 - Keep the screenshots in `docs/screenshots/`; they are the fastest way for someone to understand the project.
 - Tag a release once the target builds:
@@ -209,13 +179,7 @@ git push origin v1.0.0
 
 ### 2.5 GitHub Pages
 
-Pages is a good fit for a Cydia repo (section 5) and for a small project page. It is **not** a good fit for the mock as-is:
-
-- the mock calls `/api/...` relative to its own origin,
-- GitHub Pages cannot run the Node relay,
-- so a Pages deploy would render the shell and then fail every feed request.
-
-If you want a live demo, host the relay somewhere with HTTPS (Fly.io, Render, a VPS) and add a configurable base URL to `web/app.js`. Until then, the screenshots and a local `npm start` are honest.
+Pages is a good fit for a Cydia repo (section 5) and for a small project page. There is no hosted browser demo: GitHub Pages cannot run the Node relay, and the app needs the relay for every feed request. Use the screenshots and a local `npm start` instead.
 
 For a project page:
 
@@ -596,7 +560,7 @@ This is the supported path. It works with 2FA, it survives cookie expiry, and it
 
 ### 6.2 The CSV shape
 
-`MTDraft -csvRow` and `web/app.js` both produce:
+`MTDraft -csvRow` produces:
 
 ```
 LetterboxdURI,tmdbID,imdbID,Title,Year,Directors,Rating,Rating10,WatchedDate,Rewatch,Tags,Review
@@ -716,11 +680,11 @@ If you want a one-tap rating inside the official app, that is a tweak (section 4
 
 | Symptom | Check |
 | --- | --- |
-| Mock shows “relay unreachable” | `curl http://127.0.0.1:3000/api/health`; restart with `npm start` |
+| App shows “relay unreachable” | `curl http://127.0.0.1:3000/api/health`; restart with `npm start` |
 | Phone cannot reach the relay | Same Wi-Fi, Mac firewall, use the LAN IP not `localhost`; open `/api/health` in phone Safari |
 | Search says “TMDB key missing” | Put `TMDB_API_KEY` in `.env` and restart; it is read at boot |
 | Posters are gray boxes | `/img` returns 403 for a non-allowlisted host; check the console and `relay/lb.js` `imageUrl` |
-| Log sheet shows a date in the wrong format | The mock uses a browser date input; the app uses `UIDatePicker` and stores ISO `yyyy-MM-dd` |
+| Log sheet shows a date in the wrong format | The app uses `UIDatePicker` and stores ISO `yyyy-MM-dd` |
 | `Send to Letterboxd` says `no_session` | `LB_SESSION_COOKIE` is unset; run `pbpaste \| npm run cookie`, then restart the relay. CSV still works |
 | `Send to Letterboxd` says `challenge` | Cloudflare challenged the relay. Recapture the whole cookie and set `LB_USER_AGENT` to the exact UA of the browser that produced `cf_clearance`; restart |
 | `Send to Letterboxd` says `no_csrf` | The session token is stale or missing. Refresh the cookie from the browser and restart the relay |

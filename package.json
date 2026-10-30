@@ -2,7 +2,7 @@
   "name": "matinee",
   "version": "1.0.0",
   "private": true,
-  "description": "An iOS 6 Letterboxd client: relay, and UIKit app.",
+  "description": "An iOS 6 Letterboxd client: relay and UIKit app.",
   "scripts": {
     "start": "node relay/start.js",
     "cookie": "node relay/cookie.js",
@@ -13,15 +13,9 @@
     "test:api": "node test/relay-api.js",
     "test:search": "node test/relay-search.js",
     "test:write-integration": "node test/relay-write.js",
-    "test:dom": "node test/dom-smoke.js",
-    "test:flows": "node test/dom-flows.js",
-    "test:sw": "node test/sw-cache.js",
     "test:objc": "node test/objc-sanity.js",
     "test:write": "node test/write-shape.js",
     "test:package": "node test/package.js",
     "test:relay": "node test/relay-live.js"
-  },
-  "devDependencies": {
-    "jsdom": "^26.0.0"
   }
 }

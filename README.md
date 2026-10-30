@@ -1,13 +1,14 @@
 # Matinee
 
-An iOS 6 Letterboxd client
+An iOS 6 Letterboxd client: a hand-written Objective-C/UIKit app and a small Node relay.
 
+The phone never holds a Letterboxd password. It talks to the relay; the relay owns the cookie and talks to Letterboxd and TMDB.
 
 <p align="center">
   <img src="docs/screenshots/diary.png" width="220" alt="Diary, with the orb mark as the only navigation title">
   <img src="docs/screenshots/film.png" width="220" alt="Film detail with a shaped iOS 6 back button">
-  <img src="docs/screenshots/log-sheet.png" width="220" alt="Log sheet with green stars">
-  <img src="docs/screenshots/profile.png" width="220" alt="Profile and relay settings">
+  <img src="docs/screenshots/log-sheet.png" width="220" alt="Log sheet with green stars and send footer">
+  <img src="docs/screenshots/profile.png" width="220" alt="Profile with the relay-owned session status">
 </p>
 
 ## Status
@@ -15,19 +16,17 @@ An iOS 6 Letterboxd client
 | Piece | State |
 | --- | --- |
 | Relay: diary, lists, film detail, image proxy, search, CSV/write shape | Working; relay suites pass offline and live against `letterboxd.com` |
-| Browser mock: diary, film, log sheet, lists, search, profile, CSV | Working; 29/29 DOM tests |
-| Installable mock: manifest, service worker, poster cache | Working; 4/4 service-worker tests |
 | UIKit target: 4 tabs, diary, film, log, lists, search, profile | Running on an iPhone 4S with iOS 6.1.3; Theos armv7 build, min iOS 6.0 |
 | Direct log to Letterboxd | Live JSON write verified against the member's own account; the same request is covered by a local signed-in mock. `npm run cookie` captures a browser session, and `/api/session` validates it against the live site |
 | CSV → official Letterboxd import | Supported path |
 
-The browser mock is the visual reference. The Objective-C target translates the same design to UIKit: the orb-only Diary nav, custom tab icons, shaped back/Log controls, pinstriped section headers, bordered cards, green per-star fill, and a session-centric Profile. It builds with Theos against the armv7 slice of the 11.4 SDK at a 6.0 deployment target, packages to `packaging/theos/packages/`, and has been installed and checked on an iPhone 4S running iOS 6.1.3. `docs/GUIDE.md` explains the exact toolchain.
+The UIKit app is the interface: the orb-only Diary nav, custom tab icons, shaped back/Log controls, pinstriped section headers, bordered cards, green per-star fill, and a session-centric Profile. It builds with Theos against the armv7 slice of the 11.4 SDK at a 6.0 deployment target, packages to `packaging/theos/packages/`, and has been installed and checked on an iPhone 4S running iOS 6.1.3. The screenshots above are device captures. `docs/GUIDE.md` explains the exact toolchain.
 
 Search results can open a draft log sheet, but they are not yet resolved to Letterboxd slugs, so sending directly from search is deferred. List detail shows the entries included in the RSS response and notes when the list has more; paging the full list is also deferred.
 
 ## Quick start
 
-Requires **Node 18+**. The relay itself has no runtime dependencies; `jsdom` is only for the tests.
+Requires **Node 18+**. The relay has no runtime dependencies.
 
 ```bash
 git clone https://github.com/kerthmfy/Matinee-ios6.git
@@ -36,10 +35,10 @@ npm install
 npm start
 ```
 
-Open <http://127.0.0.1:3000>. You should see the iPhone and iPad previews and a live feed for `@kerthfyadao`.
+The relay listens on <http://127.0.0.1:3000>. `GET /` returns a JSON endpoint index; `GET /api/health` reports the relay state. Point the app's **Profile → Relay** at the Mac's LAN address.
 
 ```bash
-npm test              # cookie, relay, mocks, DOM, write shape, ObjC, package
+npm test              # cookie, relay, write shape, ObjC, package
 npm test -- --live    # also fetch letterboxd.com
 ```
 
@@ -59,7 +58,7 @@ npm start
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PORT` | `3000` | HTTP port for the relay and mock |
+| `PORT` | `3000` | HTTP port for the relay |
 | `MATINEE_MEMBER` | `kerthfyadao` | Public handle used when the app has no saved one |
 | `TMDB_API_KEY` | unset | Enables search; without it the app shows an explanatory note |
 | `LB_SESSION_COOKIE` | unset | Enables the experimental `POST /api/log` write path |
@@ -110,10 +109,7 @@ curl -s http://127.0.0.1:3000/api/session
 │  MTDiary / MTFilm / ...  │ ◄─────────────────────────── │   /api/feed /api/film    │
 └──────────────────────────┘                              │   /api/search /api/log   │
                                                           │   /img (allowlisted)     │
-┌──────────────────────────┐        same endpoints        │                          │
-│  Browser mock (jsdom-    │ ───────────────────────────► │                          │
-│  tested static UI)       │ ◄─────────────────────────── │                          │
-└──────────────────────────┘                              └───────────┬──────────────┘
+                                                          └───────────┬──────────────┘
                                                                       │
                                        ┌──────────────────────────────┼──────────────────────────────┐
                                        ▼                              ▼                              ▼
@@ -128,28 +124,19 @@ The relay is the security boundary. Its image proxy accepts only `https://a.ltrb
 ```
 matinee/
 ├── relay/
-│   ├── server.js          HTTP routes, static mock, cache, CSV/write API
+│   ├── server.js          HTTP routes, cache, CSV/write API
 │   ├── lb.js              RSS + JSON-LD parsing, image URL rules, JSON write path
 │   ├── cookie.js          validate and save a browser session into .env
 │   ├── images.js          in-memory poster byte cache
 │   └── fixtures/          captured feed/film pages for deterministic tests
-├── web/
-│   ├── index.html         iPhone + iPad preview page
-│   ├── app.js             all mock screens and interactions
-│   ├── style.css          iOS 6 chrome, back button, sheet, stars
-│   ├── icon.svg           square app icon source
-│   └── icon-*.png         home-screen / manifest icons
 ├── Matinee/
 │   ├── Matinee.xcodeproj/ hand-written project file
 │   └── Matinee/           15 Objective-C sources + Info.plist + icons
 ├── test/
 │   ├── cookie.js          cookie normalization, .env editing, permissions
-│   ├── relay-api.js       offline HTTP routes, static files, SSRF boundary
+│   ├── relay-api.js       offline HTTP routes, JSON index, SSRF boundary
 │   ├── relay-search.js    TMDB search against a local HTTPS mock
 │   ├── relay-write.js     signed-in JSON write and /api/session against a local HTTPS mock
-│   ├── dom-smoke.js       the original visual/interaction regressions
-│   ├── dom-flows.js       search, lists, connect, iPad split view
-│   ├── sw-cache.js        opaque poster caching without a browser
 │   ├── write-shape.js     validates the film JSON and log-entry shape
 │   ├── objc-sanity.js     structure, imports, deployment target, banned APIs
 │   ├── package.js         Theos, Info.plist, icons, screenshots, docs
@@ -203,7 +190,7 @@ Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB
 - **The mark is the brand.** The Diary tab's navigation title is only the three-orb mark. No “Matinee” text competes with it.
 - **A shaped back control.** The old `‹ Diary` text glyph was replaced with an iOS 6 pointed-cap button: a 1px outline, a vertical gradient, and a real tappable cap. The centered title shrinks to 46% on screens with a back button so the two never collide.
 - **Stars are clipped per star.** Each star is its own path; the fill is clipped to `starWidth × fraction`, so the 2px gaps never count toward a half star. The color is `#00c853`.
-- **The log sheet animates once.** `sheet-enter` is applied on mount only. A star tap repaints the same node in place (no table reload, no scroll jump), which is the behavior the DOM test guards.
+- **The log sheet animates once.** The sheet keeps its scroll position and animation after the first mount; a star tap repaints the same view instead of reloading the table.
 - **Posters have a light placeholder.** `#e7e9ed`, not a dark gradient block, so a slow image reads as paper rather than a hole.
 - **The icon is a full square.** iOS applies the rounded mask; baking the mask into the PNG would double-round it.
 
@@ -212,19 +199,16 @@ Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB
 ```text
 ok   secrets:          4/4 passed
 ok   cookie:          11/11 passed
-ok   relay-api:       20/20 passed
+ok   relay-api:       18/18 passed
 ok   relay-search:     7/7 passed
 ok   relay-write:     19/19 passed
-ok   dom-smoke:       15/15 passed
-ok   dom-flows:       14/14 passed
-ok   sw-cache:         4/4 passed
 ok   write-path:      35/35 passed
 ok   objc-sanity:     26/26 passed
-ok   package:         16/16 passed
+ok   package:         15/15 passed
 ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
 ```
 
-The offline total is **171 assertions across 11 suites**; with `--live` it is **188 assertions across 12 suites**. Search and direct write are exercised
+The offline total is **135 assertions across 8 suites**; with `--live` it is **152 assertions across 9 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
 real Letterboxd cookie validates against the live site, and a live diary write
