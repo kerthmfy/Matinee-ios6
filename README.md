@@ -194,20 +194,6 @@ Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB
 - **Posters have a light placeholder.** `#e7e9ed`, not a dark gradient block, so a slow image reads as paper rather than a hole.
 - **The icon is a full square.** iOS applies the rounded mask; baking the mask into the PNG would double-round it.
 
-## Tests
-
-```text
-ok   secrets:          4/4 passed
-ok   cookie:          11/11 passed
-ok   relay-api:       18/18 passed
-ok   relay-search:     7/7 passed
-ok   relay-write:     19/19 passed
-ok   write-path:      35/35 passed
-ok   objc-sanity:     26/26 passed
-ok   package:         15/15 passed
-ok   relay-live:      17/17 passed   (opt-in; 50 diary, 5 lists, 50/50 posters)
-```
-
 The offline total is **135 assertions across 8 suites**; with `--live` it is **152 assertions across 9 suites**. Search and direct write are exercised
 against local self-signed HTTPS servers: the real request/parse/mapping code
 runs. A configured TMDB key was also checked against the real API manually. A
