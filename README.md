@@ -1,6 +1,6 @@
 # Matinee
 
-An iOS 6 Letterboxd client: a hand-written Objective-C/UIKit app and a small Node relay.
+An iOS 6 Letterboxd client: cloudflare is making ts hard so.. relay it is
 
 The phone never holds a Letterboxd password. It talks to the relay; the relay owns the cookie and talks to Letterboxd and TMDB.
 
@@ -11,18 +11,6 @@ The phone never holds a Letterboxd password. It talks to the relay; the relay ow
   <img src="docs/screenshots/profile.png" width="220" alt="Profile with the relay-owned session status">
 </p>
 
-## Status
-
-| Piece | State |
-| --- | --- |
-| Relay: diary, lists, film detail, image proxy, search, CSV/write shape | Working; relay suites pass offline and live against `letterboxd.com` |
-| UIKit target: 4 tabs, diary, film, log, lists, search, profile | Running on an iPhone 4S with iOS 6.1.3; Theos armv7 build, min iOS 6.0 |
-| Direct log to Letterboxd | Live JSON write verified against the member's own account; the same request is covered by a local signed-in mock. `npm run cookie` captures a browser session, and `/api/session` validates it against the live site |
-| CSV → official Letterboxd import | Supported path |
-
-The UIKit app is the interface: the orb-only Diary nav, custom tab icons, shaped back/Log controls, pinstriped section headers, bordered cards, green per-star fill, and a session-centric Profile. It builds with Theos against the armv7 slice of the 11.4 SDK at a 6.0 deployment target, packages to `packaging/theos/packages/`, and has been installed and checked on an iPhone 4S running iOS 6.1.3. The screenshots above are device captures. `docs/GUIDE.md` explains the exact toolchain.
-
-Search results can open a draft log sheet, but they are not yet resolved to Letterboxd slugs, so sending directly from search is deferred. List detail shows the entries included in the RSS response and notes when the list has more; paging the full list is also deferred.
 
 ## Quick start
 
@@ -165,53 +153,11 @@ Open `Matinee/Matinee.xcodeproj` in a toolchain that still has the iOS 6 SDK. Th
 
 On first launch, open **Profile → Relay** and enter the relay's LAN address, for example `http://192.168.1.50:3000`. The default in `MTStore.m` is a placeholder; change it before building or set it on the device. Then tap **Diary handle** and enter a public handle, profile URL, or RSS URL. This is the public feed handle, not a Letterboxd sign-in.
 
-The app is not signed or notarized. Install it with Xcode to a jailbroken or provisioned device, or build the `.deb` in `packaging/theos/`.
 
-## Rating and logging
-
-There are two paths, and they are deliberately different:
-
-1. **Drafts → CSV → Letterboxd import (supported).** Rate in the log sheet, save. Profile → **Export CSV** attaches `matinee-drafts.csv` to Mail, or copies it to the pasteboard when Mail is unavailable. Import at <https://letterboxd.com/import>. The CSV header is the official shape:
-
-   ```text
-   LetterboxdURI,tmdbID,imdbID,Title,Year,Directors,Rating,Rating10,WatchedDate,Rewatch,Tags,Review
-   ```
-
-   This needs no cookie, survives 2FA, and uses Letterboxd's official importer. It remains the low-risk path.
-
-2. **Send to Letterboxd (experimental).** If the relay has `LB_SESSION_COOKIE`, the log sheet's **Send to Letterboxd** row posts the same JSON log entry the site's own diary form posts. The relay fetches the film page to confirm `person.loggedIn`, gets the production `lid` and a fresh CSRF token from `/film/<slug>/json/`, then posts to `/api/v0/production-log-entries` with `X-CSRF-TOKEN`. Capture the cookie with `pbpaste | npm run cookie`, set `LB_USER_AGENT` to the browser's exact UA, restart the relay, and use **Profile → Check session** to confirm it. The request shape, signed-in detection, cookie forwarding, success (`logEntry.id`), rejection, invalid CSRF, Cloudflare challenge, expired-session, and `/api/session` paths are tested against a local HTTPS mock, and a live write has succeeded against the member's own account. It is off by default and returns `no_session` until configured.
-
-Why not log in on the phone? It would mean handling a password, 2FA, cookie expiry, and CSRF on the device, and it would still be an unofficial write path. The relay keeps that blast radius on a machine you control, and the CSV path keeps the app useful without it.
 
 Search needs a TMDB key. Without one, Search shows: “Search is powered by TMDB. Add TMDB_API_KEY to the relay to turn it on.”
 
-## Design notes
 
-- **The mark is the brand.** The Diary tab's navigation title is only the three-orb mark. No “Matinee” text competes with it.
-- **A shaped back control.** The old `‹ Diary` text glyph was replaced with an iOS 6 pointed-cap button: a 1px outline, a vertical gradient, and a real tappable cap. The centered title shrinks to 46% on screens with a back button so the two never collide.
-- **Stars are clipped per star.** Each star is its own path; the fill is clipped to `starWidth × fraction`, so the 2px gaps never count toward a half star. The color is `#00c853`.
-- **The log sheet animates once.** The sheet keeps its scroll position and animation after the first mount; a star tap repaints the same view instead of reloading the table.
-- **Posters have a light placeholder.** `#e7e9ed`, not a dark gradient block, so a slow image reads as paper rather than a hole.
-- **The icon is a full square.** iOS applies the rounded mask; baking the mask into the PNG would double-round it.
-
-The offline total is **135 assertions across 8 suites**; with `--live` it is **152 assertions across 9 suites**. Search and direct write are exercised
-against local self-signed HTTPS servers: the real request/parse/mapping code
-runs. A configured TMDB key was also checked against the real API manually. A
-real Letterboxd cookie validates against the live site, and a live diary write
-returned a `logEntry.id` and appeared in the diary feed.
-
-`objc-sanity` is structural, not a compiler; the Theos package build is the compile check. It checks that every source exists, every quoted import resolves, every `.m` is in the Sources phase, the deployment target and ARC settings are present, the four icon slots exist, and no iOS 7+ API token appears in the target.
-
-## Publishing and Cydia
-
-`docs/GUIDE.md` walks through:
-
-- the build story, file by file,
-- `git init` → GitHub → Pages,
-- building the UIKit target with Xcode 4.6/5.1 or Theos,
-- the difference between an **app package** and a **tweak**, with a Logos example and the legal caveats,
-- a complete Cydia repo: `control`, `Packages`, `Release`, GitHub Pages, and the source URL to add in Cydia,
-- the direct-write option and why CSV remains the supported path.
 
 ## Legal
 
