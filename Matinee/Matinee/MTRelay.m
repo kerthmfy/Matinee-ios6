@@ -164,6 +164,22 @@ static NSError *MTRelayError(NSInteger code, NSString *message)
     [self getPath:[@"/api/search?q=" stringByAppendingString:encoded] completion:completion];
 }
 
+- (void)resolveTitle:(NSString *)title year:(NSInteger)year completion:(MTRelayCompletion)completion
+{
+    NSString *trimmed = [title stringByTrimmingCharactersInSet:
+                         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!trimmed.length) {
+        if (completion) completion(nil, MTRelayError(0, @"Nothing to look up."));
+        return;
+    }
+    NSString *encoded = [trimmed stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    NSString *path = [@"/api/resolve?title=" stringByAppendingString:encoded];
+    if (year > 0) {
+        path = [path stringByAppendingFormat:@"&year=%ld", (long)year];
+    }
+    [self getPath:path completion:completion];
+}
+
 - (void)connectInput:(NSString *)input completion:(MTRelayCompletion)completion
 {
     [self postPath:@"/api/connect" body:@{@"input": input ?: @""} completion:completion];

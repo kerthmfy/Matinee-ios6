@@ -487,6 +487,62 @@ async function fetchFilm(slug, cookie) {
 }
 
 /* ------------------------------------------------------------------ */
+/* letterboxd search (title -> slug)                                   */
+/* ------------------------------------------------------------------ */
+
+const SEARCH_URL = (query) => LB_ORIGIN + '/search/' + encodeURIComponent(query) + '/';
+
+/**
+ * Pull film slugs out of a Letterboxd search results page, in result order.
+ * Poster components carry data-film-slug; plain result blocks link
+ * /film/<slug>/. Both patterns are accepted and deduplicated.
+ */
+function parseSearchSlugs(html) {
+  const slugs = [];
+  const seen = new Set();
+  const push = (slug) => {
+    if (slug && !seen.has(slug)) {
+      seen.add(slug);
+      slugs.push(slug);
+    }
+  };
+  for (const m of String(html || '').matchAll(/data-film-slug="([a-z0-9][a-z0-9-]{0,199})"/g)) {
+    push(m[1]);
+  }
+  if (!slugs.length) {
+    for (const m of String(html || '').matchAll(/href="\/film\/([a-z0-9][a-z0-9-]{0,199})\/"/g)) {
+      push(m[1]);
+    }
+  }
+  return slugs;
+}
+
+/**
+ * Fetch the Letterboxd search page for a query and return the film slugs it
+ * lists, in order. The session cookie is forwarded because Cloudflare ties
+ * clearance to it; a challenge throws err.challenge = true.
+ */
+async function searchFilms(query, cookie) {
+  const q = String(query || '').trim().slice(0, 80);
+  if (!q) return [];
+  const headers = {};
+  if (cookie) headers.Cookie = cookie;
+  const res = await request(SEARCH_URL(q), { headers });
+  if (isChallenge(res)) {
+    const err = new Error('challenge');
+    err.challenge = true;
+    err.status = res.status;
+    throw err;
+  }
+  if (res.status !== 200) {
+    const err = new Error('search_http_' + res.status);
+    err.status = res.status;
+    throw err;
+  }
+  return parseSearchSlugs(res.body.toString('utf8'));
+}
+
+/* ------------------------------------------------------------------ */
 /* image proxy                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -879,6 +935,9 @@ module.exports = {
   parseFilmJson,
   fetchFilmJson,
   parseRuntime,
+  parseSearchSlugs,
+  searchFilms,
+  SEARCH_URL,
   imageUrl,
   fetchImage,
   proxyPath,

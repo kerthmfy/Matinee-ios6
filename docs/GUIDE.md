@@ -37,6 +37,7 @@ The UIKit target is the interface. It uses custom-drawn chrome and hand-built ta
 | `GET /api/feed?user=handle` | Fetches and parses the public RSS feed; returns diary entries and lists |
 | `GET /api/film?slug=...` | Fetches a film page, parses JSON-LD, runtime, cast, synopsis, CSRF, and `viewingableUid` |
 | `GET /api/search?q=...` | TMDB search; returns `tmdb_key_missing` when unconfigured |
+| `GET /api/resolve?title=...&year=...` | Turns a TMDB result into a Letterboxd film: searches Letterboxd, verifies candidates against film pages (title and year), and returns the same payload as `/api/film`. Falls back to `not_found` or `challenge`. |
 | `POST /api/connect` | Normalizes a handle/profile URL/RSS URL and checks the feed |
 | `GET /api/session` | Reports whether `LB_SESSION_COOKIE` is configured and whether Letterboxd still accepts it |
 | `POST /api/log` | Experimental JSON log-entry write using `LB_SESSION_COOKIE` and the site's own first-party endpoint |

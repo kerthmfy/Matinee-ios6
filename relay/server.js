@@ -200,6 +200,67 @@ async function getFilm(slug, opts) {
   }
 }
 
+const RESOLVE_TTL_MS = 60 * 60 * 1000;
+const resolveCache = new Map();
+
+/**
+ * Turn a title (and optional year) from TMDB search into a Letterboxd film.
+ * Searches Letterboxd for candidate slugs, then verifies them against the
+ * film page — reusing getFilm's cache — until title and year agree. The
+ * session cookie is forwarded because Cloudflare ties clearance to it.
+ */
+async function resolveFilm(title, year) {
+  const want = String(title || '').trim().toLowerCase();
+  if (!want) return { ok: false, reason: 'empty_title' };
+  const wantYear = parseInt(year, 10) || 0;
+
+  const cacheKey = want + '|' + wantYear;
+  const hit = resolveCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.data;
+
+  let slugs;
+  try {
+    slugs = await lb.searchFilms(title, process.env.LB_SESSION_COOKIE || '');
+  } catch (err) {
+    if (err && err.challenge) {
+      return {
+        ok: false,
+        reason: 'challenge',
+        detail:
+          'Cloudflare challenged the search request. Copy a fresh cf_clearance ' +
+          'cookie and matching User-Agent, then restart the relay.',
+      };
+    }
+    return {
+      ok: false,
+      reason: 'search_unavailable',
+      detail: String((err && err.message) || err),
+    };
+  }
+
+  for (const slug of slugs.slice(0, 3)) {
+    let film;
+    try {
+      film = await getFilm(slug);
+    } catch (e) {
+      continue;
+    }
+    const filmTitle = String(film.title || '').trim().toLowerCase();
+    if (filmTitle !== want) continue;
+    if (wantYear && film.year && parseInt(film.year, 10) !== wantYear) continue;
+    resolveCache.set(cacheKey, { data: film, at: Date.now() });
+    return film;
+  }
+
+  return {
+    ok: false,
+    reason: 'not_found',
+    detail:
+      'No Letterboxd film matched "' + title + '"' +
+      (wantYear ? ' (' + wantYear + ')' : '') + '.',
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* tmdb search                                                         */
 /* ------------------------------------------------------------------ */
@@ -442,6 +503,15 @@ async function route(req, res) {
     }
   }
 
+  if (pathname === '/api/resolve') {
+    const title = (u.searchParams.get('title') || '').trim();
+    const year = (u.searchParams.get('year') || '').trim();
+    if (!title) return sendJson(res, 400, { ok: false, reason: 'empty_title' });
+    const result = await resolveFilm(title, year);
+    if (result.ok) return sendJson(res, 200, result);
+    return sendJson(res, result.reason === 'not_found' ? 404 : 502, result);
+  }
+
   if (pathname === '/api/search') {
     try {
       const result = await search(u.searchParams.get('q'));
@@ -578,4 +648,4 @@ function start() {
 
 if (require.main === module) start();
 
-module.exports = { createServer, start, getFeed, getFilm, search, MEMBER };
+module.exports = { createServer, start, getFeed, getFilm, resolveFilm, search, MEMBER };

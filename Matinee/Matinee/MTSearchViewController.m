@@ -297,7 +297,7 @@ static NSInteger MTSearchInteger(id value)
     note.textColor = [MTAppearance muted];
     note.textAlignment = NSTextAlignmentCenter;
     note.numberOfLines = 0;
-    note.text = @"Tapping a result creates a draft keyed by tmdbID. Letterboxd's importer matches that column directly.";
+    note.text = @"Tapping a result looks the film up on Letterboxd and opens the log sheet. If the lookup fails, the draft is keyed by tmdbID for CSV import.";
     [footer addSubview:note];
     self.tableView.tableFooterView = footer;
 }
@@ -339,8 +339,33 @@ static NSInteger MTSearchInteger(id value)
 {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     MTEntry *entry = self.results[(NSUInteger)indexPath.row];
+    [self resolveAndOpenLog:entry];
+}
 
-    MTLogViewController *log = [[MTLogViewController alloc] initWithEntry:entry film:nil];
+- (void)resolveAndOpenLog:(MTEntry *)entry
+{
+    self.noteLabel.text = [NSString stringWithFormat:@"Looking up \u201C%@\u201D on Letterboxd\u2026", entry.title];
+    self.tableView.backgroundView = self.noteLabel;
+
+    __weak MTSearchViewController *weakSelf = self;
+    [[MTRelay sharedRelay] resolveTitle:entry.title year:entry.year completion:^(id json, NSError *error) {
+        MTSearchViewController *strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        strongSelf.tableView.backgroundView = strongSelf.results.count ? nil : strongSelf.noteLabel;
+        if (!strongSelf.results.count) strongSelf.noteLabel.text = @"No matches.";
+
+        MTFilm *film = nil;
+        if (!error && [json isKindOfClass:[NSDictionary class]]) {
+            film = [MTFilm filmWithDictionary:json];
+        }
+        [strongSelf openLogWithEntry:entry film:film];
+    }];
+}
+
+- (void)openLogWithEntry:(MTEntry *)entry film:(MTFilm *)film
+{
+    MTLogViewController *log = [[MTLogViewController alloc] initWithEntry:entry film:film];
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:log];
     [MTAppearance styleNavigationBar:nav.navigationBar];
     nav.modalPresentationStyle = UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPad

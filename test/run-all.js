@@ -22,6 +22,7 @@ const suites = [
   ['relay HTTP API', 'test/relay-api.js'],
   ['TMDB search integration', 'test/relay-search.js'],
   ['Letterboxd write integration', 'test/relay-write.js'],
+  ['Letterboxd resolve integration', 'test/relay-resolve.js'],
   ['write shape', 'test/write-shape.js'],
   ['Objective-C structure', 'test/objc-sanity.js'],
   ['package and assets', 'test/package.js'],
