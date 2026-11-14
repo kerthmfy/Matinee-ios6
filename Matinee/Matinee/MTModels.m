@@ -6,6 +6,9 @@
 #import "MTModels.h"
 #import <math.h>
 
+NSString * const MTDraftStatusQueued = @"queued";
+NSString * const MTDraftStatusFailed = @"failed";
+
 static NSString *MTString(id value)
 {
     return [value isKindOfClass:[NSString class]] ? value : nil;
@@ -170,6 +173,8 @@ static NSString *MTCSVField(NSString *value)
     draft.tags = MTString(dict[@"tags"]);
     draft.rewatch = [MTNumber(dict[@"rewatch"]) boolValue];
     draft.liked = [MTNumber(dict[@"liked"]) boolValue];
+    draft.status = MTString(dict[@"status"]);
+    draft.note = MTString(dict[@"note"]);
     return draft;
 }
 
@@ -189,6 +194,8 @@ static NSString *MTCSVField(NSString *value)
     if (self.tags) dict[@"tags"] = self.tags;
     dict[@"rewatch"] = @(self.rewatch);
     dict[@"liked"] = @(self.liked);
+    if (self.status) dict[@"status"] = self.status;
+    if (self.note) dict[@"note"] = self.note;
     return dict;
 }
 

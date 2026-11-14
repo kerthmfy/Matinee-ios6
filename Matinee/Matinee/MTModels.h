@@ -9,6 +9,9 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 
+extern NSString * const MTDraftStatusQueued;
+extern NSString * const MTDraftStatusFailed;
+
 @interface MTEntry : NSObject
 
 @property (nonatomic, copy) NSString *entryId;
@@ -79,6 +82,11 @@
 @property (nonatomic, copy) NSString *tags;
 @property (nonatomic, assign) BOOL rewatch;
 @property (nonatomic, assign) BOOL liked;
+
+// Outbox state. nil for a plain saved draft; queued or failed while the
+// draft is waiting for the relay to take it.
+@property (nonatomic, copy) NSString *status;
+@property (nonatomic, copy) NSString *note;        // last send error, for the UI
 
 + (instancetype)draftWithEntry:(MTEntry *)entry film:(MTFilm *)film;
 + (instancetype)draftWithDictionary:(NSDictionary *)dict;

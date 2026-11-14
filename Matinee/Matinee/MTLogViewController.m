@@ -543,7 +543,7 @@ static NSDate *MTDateFromISO(NSString *string)
     note.textAlignment = NSTextAlignmentCenter;
     note.numberOfLines = 0;
     note.text = canSend
-        ? @"Experimental \u00b7 uses a session cookie on the relay"
+        ? @"Experimental \u00b7 uses a session cookie on the relay \u00b7 failures stay queued"
         : (self.draft.slug.length
            ? @"Saves as a draft on this device \u00b7 export from Profile"
            : @"Search result \u00b7 matches by tmdbID on CSV import");
@@ -689,8 +689,11 @@ static NSDate *MTDateFromISO(NSString *string)
         if (!strongSelf) return;
 
         if (error) {
-            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Not logged"
-                                                            message:error.localizedDescription
+            self.draft.status = MTDraftStatusQueued;
+            self.draft.note = error.localizedDescription;
+            [MTStore enqueueDraft:self.draft];
+            UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Kept in the outbox"
+                                                            message:@"The relay did not take the entry. It is queued on this phone and will send when the relay is reachable."
                                                            delegate:nil
                                                   cancelButtonTitle:@"OK"
                                                   otherButtonTitles:nil];

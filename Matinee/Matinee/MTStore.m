@@ -4,6 +4,7 @@
 //
 
 #import "MTStore.h"
+#import "MTRelay.h"
 
 NSString * const MTDraftsDidChangeNotification = @"MTDraftsDidChangeNotification";
 NSString * const MTFeedShouldReloadNotification = @"MTFeedShouldReloadNotification";
@@ -99,6 +100,69 @@ static NSString * const MTRelayKey  = @"matinee.relay";
     if (index < 0 || index >= (NSInteger)drafts.count) return;
     [drafts removeObjectAtIndex:(NSUInteger)index];
     [self saveDrafts:drafts];
+}
+
++ (NSArray *)outboxDrafts
+{
+    NSMutableArray *outbox = [NSMutableArray array];
+    for (MTDraft *draft in [self drafts]) {
+        if (draft.status.length) [outbox addObject:draft];
+    }
+    return outbox;
+}
+
++ (NSInteger)outboxCount
+{
+    return (NSInteger)[self outboxDrafts].count;
+}
+
++ (void)enqueueDraft:(MTDraft *)draft
+{
+    if (!draft) return;
+    draft.status = MTDraftStatusQueued;
+    [self addDraft:draft];
+}
+
++ (void)replaceDraftAtIndex:(NSInteger)index withDraft:(MTDraft *)draft
+{
+    NSMutableArray *drafts = [[self drafts] mutableCopy];
+    if (!draft || index < 0 || index >= (NSInteger)drafts.count) return;
+    [drafts replaceObjectAtIndex:(NSUInteger)index withObject:draft];
+    [self saveDrafts:drafts];
+}
+
++ (void)flushOutbox
+{
+    static BOOL flushing = NO;
+    if (flushing) return;
+    flushing = YES;
+
+    NSArray *drafts = [self drafts];
+    NSInteger index = -1;
+    for (NSUInteger i = 0; i < drafts.count; i++) {
+        if ([drafts[i] status].length) {
+            index = (NSInteger)i;
+            break;
+        }
+    }
+    if (index < 0) {
+        flushing = NO;
+        return;
+    }
+
+    NSUInteger before = drafts.count;
+    MTDraft *draft = drafts[(NSUInteger)index];
+    [[MTRelay sharedRelay] logDraft:draft completion:^(id json, NSError *error) {
+        flushing = NO;
+        if (error) {
+            draft.status = MTDraftStatusFailed;
+            draft.note = error.localizedDescription;
+            [MTStore replaceDraftAtIndex:index withDraft:draft];
+            return;
+        }
+        [MTStore removeDraftAtIndex:index];
+        if ([MTStore drafts].count < before) [MTStore flushOutbox];
+    }];
 }
 
 + (void)clearDrafts

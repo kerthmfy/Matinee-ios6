@@ -336,6 +336,7 @@ static CGFloat MTDiaryRightInset(void)     { return 8.0 + 10.0; }
         strongSelf.items = diary;
         strongSelf.tableView.backgroundView = nil;
         [strongSelf.tableView reloadData];
+        [MTStore flushOutbox];
     }];
 }
 

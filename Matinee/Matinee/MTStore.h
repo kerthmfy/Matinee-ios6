@@ -27,4 +27,15 @@ extern NSString * const MTFeedShouldReloadNotification;
 + (void)removeDraftAtIndex:(NSInteger)index;
 + (void)clearDrafts;
 
+// The outbox: drafts with a status, waiting for the relay to take them.
++ (NSArray *)outboxDrafts;        // NSArray of MTDraft, queued or failed
++ (NSInteger)outboxCount;
++ (void)enqueueDraft:(MTDraft *)draft;   // marks the draft queued and stores it
++ (void)replaceDraftAtIndex:(NSInteger)index withDraft:(MTDraft *)draft;
+
+// Sends queued drafts to the relay one at a time. Safe to call often: it is
+// a no-op while a flush is already running or the outbox is empty. On the
+// first failure the draft is marked failed and the flush stops.
++ (void)flushOutbox;
+
 @end

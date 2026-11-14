@@ -503,6 +503,7 @@ static NSString *MTProfileFeedSource(NSString *source)
             strongSelf.sessionState = MTSessionStateValid;
             strongSelf.sessionDetail = @"Write path ready.";
             strongSelf.sessionAlertMessage = @"Letterboxd recognized the relay's cookie. The log sheet can post diary entries.";
+            [MTStore flushOutbox];
         } else if ([dict[@"reason"] isEqualToString:@"network"]) {
             strongSelf.sessionState = MTSessionStateLetterboxdOffline;
             strongSelf.sessionDetail = @"The relay cannot reach Letterboxd.";
@@ -552,7 +553,7 @@ static NSString *MTProfileFeedSource(NSString *source)
 {
     if (section == 0) return 4;
     if (section == 1) return 3;
-    if (section == 2) return 3;
+    if (section == 2) return 4;
     return 1;
 }
 
@@ -570,7 +571,7 @@ static NSString *MTProfileFeedSource(NSString *source)
         return @"The diary is the public RSS feed. The handle is separate from the relay's session.";
     }
     if (section == 2) {
-        return @"Drafts stay on this phone. Export them for letterboxd.com/import, or send from the log sheet.";
+        return @"Drafts stay on this phone. Queued entries send when the relay is reachable; export CSV for letterboxd.com/import.";
     }
     return @"Matinee is an unofficial client. Not affiliated with Letterboxd. Posters and metadata belong to their owners.";
 }
@@ -701,12 +702,22 @@ static NSString *MTProfileFeedSource(NSString *source)
 
     if (indexPath.section == 2) {
         NSArray *drafts = [MTStore drafts];
+        NSInteger queued = [MTStore outboxCount];
         if (indexPath.row == 0) {
-            return [self valueCellWithTitle:@"Saved drafts"
-                                      detail:[NSString stringWithFormat:@"%lu", (unsigned long)drafts.count]
-                                    tappable:NO];
+            NSString *detail = queued > 0
+                ? [NSString stringWithFormat:@"%lu \u00b7 %ld queued",
+                    (unsigned long)drafts.count, (long)queued]
+                : [NSString stringWithFormat:@"%lu", (unsigned long)drafts.count];
+            return [self valueCellWithTitle:@"Saved drafts" detail:detail tappable:NO];
         }
         if (indexPath.row == 1) {
+            UITableViewCell *cell = [self valueCellWithTitle:@"Send queued"
+                                                      detail:queued > 0 ? @"" : @"None"
+                                                    tappable:queued > 0];
+            if (!queued) cell.textLabel.textColor = [UIColor lightGrayColor];
+            return cell;
+        }
+        if (indexPath.row == 2) {
             UITableViewCell *cell = [self valueCellWithTitle:@"Export CSV"
                                                       detail:drafts.count ? @"Email or copy" : @""
                                                     tappable:drafts.count > 0];
@@ -756,8 +767,10 @@ static NSString *MTProfileFeedSource(NSString *source)
         NSArray *drafts = [MTStore drafts];
         if (!drafts.count) return;
         if (indexPath.row == 1) {
-            [self exportDrafts:drafts];
+            [MTStore flushOutbox];
         } else if (indexPath.row == 2) {
+            [self exportDrafts:drafts];
+        } else if (indexPath.row == 3) {
             [self confirmClear];
         }
     }

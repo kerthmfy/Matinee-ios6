@@ -108,6 +108,7 @@ The Objective-C suite is structural, not a compiler; the Theos package build is 
 - **The sheet animates once.** It animates on mount and keeps its scroll position; a star tap repaints it in place.
 - **Poster placeholders are light.** `#e7e9ed` reads as paper. Dark gradient placeholders looked like missing content.
 - **The icon is square.** iOS applies the mask. The four icon sizes live in `Matinee/Matinee/Resources/`.
+- **Send failures queue instead of vanish.** A log entry the relay cannot take is kept on the phone with a `queued` status (the outbox) and retried at launch, after a successful diary load, and after a successful session check. Profile → **Send queued** forces a retry; a draft that fails again is marked `failed` with the error in its note. Clearing drafts clears the outbox too.
 
 ---
 
