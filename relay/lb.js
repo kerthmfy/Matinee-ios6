@@ -422,6 +422,10 @@ function parseFilm(html, slug) {
     /<input\b[^>]*\bvalue="([^"]*)"[^>]*\bname="__csrf"/i.exec(html);
   const csrfInput = csrfInputMatch ? csrfInputMatch[1] : null;
 
+  // The Letterboxd film id used by the write API also appears in the page's
+  // analytics bootstrap. It is the page-side fallback for the film JSON lid.
+  const filmId = (/(?:analytic_params\['film_id'\]|analytic_params\["film_id"\])\s*=\s*(['"])([^'"]*)\1/.exec(html) || [])[2] || null;
+
   // Letterboxd renders a placeholder hidden input and replaces it on submit
   // with window.supermodelCSRF. The assignment appears more than once; the
   // last non-empty value is the member token.
@@ -462,6 +466,7 @@ function parseFilm(html, slug) {
     synopsis: (ld && ld.description) || '',
     countries: ld && ld.countryOfOrigin ? [].concat(ld.countryOfOrigin) : [],
     uid,
+    filmId,
     csrf,
     loggable: Boolean(uid) && Boolean(csrf),
     signedIn,
@@ -799,38 +804,54 @@ async function submitLog(opts) {
 
   // The film JSON endpoint is the site's own source for `lid` and a fresh
   // CSRF token. Falling back to the page token keeps older markup working.
-  let metaRes;
+  // Cloudflare protects the /json/ path more aggressively than film pages,
+  // so a challenge there is not fatal: the page's own film id and CSRF
+  // token can carry the entry when the JSON endpoint refuses to answer.
+  let metaRes = null;
+  let meta = null;
+  let jsonChallenged = false;
   try {
     metaRes = await fetchFilmJson(opts.slug, cookie);
   } catch (e) {
-    return { ok: false, reason: 'film_unreachable', detail: String(e.message) };
+    metaRes = null;
   }
-  if (isChallenge(metaRes)) return challengeResult('film JSON', metaRes);
-  if (metaRes.status !== 200) {
-    return {
-      ok: false,
-      status: metaRes.status,
-      reason: 'film_unreachable',
-      detail: 'Film JSON returned HTTP ' + metaRes.status + '.',
-    };
+  if (metaRes) {
+    if (isChallenge(metaRes)) {
+      jsonChallenged = true;
+    } else if (metaRes.status === 200) {
+      meta = metaRes.parsed;
+    }
   }
-  const meta = metaRes.parsed;
-  if (!meta) {
-    return {
-      ok: false,
-      status: metaRes.status,
-      reason: 'film_json_invalid',
-      detail: 'Film JSON was not the object Letterboxd normally returns.',
-    };
-  }
-  if (!meta.lid) {
+
+  const lid = (meta && meta.lid) || (jsonChallenged ? film.filmId : null);
+  if (!lid) {
+    if (jsonChallenged) return challengeResult('film JSON', metaRes);
+    if (!metaRes) {
+      return { ok: false, reason: 'film_unreachable', detail: 'Film JSON request failed.' };
+    }
+    if (metaRes.status !== 200) {
+      return {
+        ok: false,
+        status: metaRes.status,
+        reason: 'film_unreachable',
+        detail: 'Film JSON returned HTTP ' + metaRes.status + '.',
+      };
+    }
+    if (!meta) {
+      return {
+        ok: false,
+        status: metaRes.status,
+        reason: 'film_json_invalid',
+        detail: 'Film JSON was not the object Letterboxd normally returns.',
+      };
+    }
     return {
       ok: false,
       reason: 'no_lid',
       detail: 'Film JSON did not expose a production lid.',
     };
   }
-  const csrf = meta.csrf || film.csrf;
+  const csrf = (meta && meta.csrf) || film.csrf;
   if (!csrf) {
     return {
       ok: false,
@@ -839,7 +860,7 @@ async function submitLog(opts) {
     };
   }
 
-  const entry = buildLogEntry(meta, opts);
+  const entry = buildLogEntry(Object.assign({ lid: lid }, meta || {}), opts);
   let res;
   try {
     res = await request(LOG_ENTRY_URL, {
@@ -880,7 +901,7 @@ async function submitLog(opts) {
       detail: 'Letterboxd created diary entry ' + logEntryId + '.',
       id: logEntryId,
       uid: film.uid,
-      lid: meta.lid,
+      lid: lid,
     };
   }
 
@@ -913,7 +934,7 @@ async function submitLog(opts) {
     reason: 'rejected',
     detail,
     uid: film.uid,
-    lid: meta.lid,
+    lid: lid,
   };
 }
 

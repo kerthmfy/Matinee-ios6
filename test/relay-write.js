@@ -26,6 +26,10 @@ const signedInHtml = excerpt +
   "<script>supermodelCSRF = 'test-csrf'; person.loggedIn = true;</script>";
 const signedInWithoutToken =
   "<script>data.viewingable.uid = 'film:536970'; person.loggedIn = true;</script>";
+const signedInWithoutFilmId = signedInHtml.replace(
+  "analytic_params['film_id'] = 'mwU4';",
+  ''
+);
 
 async function main() {
   let mode = 'signedin';
@@ -55,6 +59,9 @@ async function main() {
         if (mode === 'signedout') return finish(200, { 'Content-Type': 'text/html' }, excerpt);
         if (mode === 'signedin-nocsrf') {
           return finish(200, { 'Content-Type': 'text/html' }, signedInWithoutToken);
+        }
+        if (mode === 'signedin-nofilmid') {
+          return finish(200, { 'Content-Type': 'text/html' }, signedInWithoutFilmId);
         }
         return finish(200, { 'Content-Type': 'text/html; charset=utf-8' }, signedInHtml);
       }
@@ -368,8 +375,25 @@ async function main() {
     notOk(seen.some((r) => r.method === 'POST'), 'no save POST');
   });
 
-  testAsync('a challenged film JSON request is reported as challenge', async () => {
+  testAsync('a challenged film JSON falls back to the page film id and CSRF', async () => {
     reset({ jsonMode: 'challenge' });
+    const result = await lb.submitLog({
+      slug: 'the-marvels',
+      cookie: 'letterboxd.signed.in.as=test-cookie',
+      rating: 3,
+    });
+    eq(result.ok, true);
+    eq(result.reason, 'submitted');
+    eq(result.lid, 'mwU4');
+
+    const post = seen.find((r) => r.method === 'POST');
+    ok(post, 'log-entry POST was attempted');
+    eq(post.headers['x-csrf-token'], 'test-csrf');
+    eq(JSON.parse(post.body).productionId, 'mwU4');
+  });
+
+  testAsync('a challenged film JSON with no page film id is reported as challenge', async () => {
+    reset({ mode: 'signedin-nofilmid', jsonMode: 'challenge' });
     const result = await lb.submitLog({
       slug: 'the-marvels',
       cookie: 'letterboxd.signed.in.as=test-cookie',

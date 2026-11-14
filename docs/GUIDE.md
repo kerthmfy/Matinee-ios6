@@ -110,6 +110,7 @@ The Objective-C suite is structural, not a compiler; the Theos package build is 
 - **Poster placeholders are light.** `#e7e9ed` reads as paper. Dark gradient placeholders looked like missing content.
 - **The icon is square.** iOS applies the mask. The four icon sizes live in `Matinee/Matinee/Resources/`.
 - **Send failures queue instead of vanish.** A log entry the relay cannot take is kept on the phone with a `queued` status (the outbox) and retried at launch, after a successful diary load, and after a successful session check. Profile → **Send queued** forces a retry; a draft that fails again is marked `failed` with the error in its note. Clearing drafts clears the outbox too.
+- **A challenged film JSON is not fatal.** Cloudflare guards `/film/<slug>/json/` more aggressively than film pages, so when the JSON request is challenged the relay falls back to the film page it already fetched: the page's `analytic_params['film_id']` supplies the production id and `supermodelCSRF` supplies the token. Only when the page offers neither does the challenge surface to the app.
 
 ---
 
